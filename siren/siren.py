@@ -1,8 +1,13 @@
 import numpy as np
+import math
+
 import torch.nn as nn
 import torch
-import math
 import torch.nn.functional as F
+
+from einops import rearrange
+
+from PosEncoding.PosEncoding import PosEmbedding
 
 class Sine(nn.Module):
     """Sine Activation Function."""
@@ -157,6 +162,7 @@ class UniformBoxWarp(nn.Module):
     def forward(self, coordinates):
         return coordinates * self.scale_factor
 
+
 class SPATIALSIRENBASELINE(nn.Module):
     """Same architecture as TALLSIREN but adds a UniformBoxWarp to map input points to -1, 1"""
 
@@ -213,6 +219,132 @@ class SPATIALSIRENBASELINE(nn.Module):
         rbg = torch.sigmoid(self.color_layer_linear(rbg))
         
         return torch.cat([rbg, sigma], dim=-1)
+
+
+class ShallowSIREN(nn.Module):
+    def __init__(self,
+                 z_dim=128,
+                 hidden_dim=256,
+                 rgb_dim=3,
+                 device=None,
+                 ):
+        super(ShallowSIREN, self).__init__()
+
+        self.device = device
+        self.z_dim = z_dim
+        self.hidden_dim = hidden_dim
+        self.rgb_dim = rgb_dim
+
+        self.pos_emb = PosEmbedding(max_logscale=9, N_freqs=10)
+        self.dir_emb = PosEmbedding(max_logscale=3, N_freqs=4)
+        dim_pos_emb = self.pos_emb.get_out_dim()
+        dim_dir_emb = self.dir_emb.get_out_dim()
+
+        self.network = nn.ModuleList([
+            FiLMLayer(dim_pos_emb, hidden_dim),
+            FiLMLayer(hidden_dim, hidden_dim),
+        ])
+        self.network.apply(frequency_init(25))
+        self.network[0].apply(first_layer_film_sine_init)
+
+        self.final_layer = nn.Linear(hidden_dim, 1)
+        self.final_layer.apply(frequency_init(25))
+
+        self.color_layer_sine = FiLMLayer(hidden_dim + dim_dir_emb, hidden_dim)
+        self.color_layer_sine.apply(frequency_init(25))
+
+        self.color_layer_linear = nn.Sequential(nn.Linear(hidden_dim, rgb_dim))
+        self.color_layer_linear.apply(frequency_init(25))
+
+        self.grid_warper = UniformBoxWarp(0.24)
+
+        return
+
+    def forward(self, input, style_dict, ray_directions, **kwargs):
+        """
+
+        :param input: points xyz, (b, num_points, 3)
+        :param style_dict:
+        :param ray_directions: (b, num_points, 3)
+        :param kwargs:
+        :return:
+        - out: (b, num_points, 4), rgb(3) + sigma(1)
+        """
+        out = self.forward_with_frequencies_phase_shifts(
+            input=input,
+            style_dict=style_dict,
+            ray_directions=ray_directions,
+            **kwargs)
+
+        return out
+
+    def get_freq_phase(self, style_dict, name):
+        styles = style_dict[name]
+        styles = rearrange(styles, "b (n d) -> b d n", n=2)
+        frequencies, phase_shifts = styles.unbind(-1)
+        frequencies = frequencies * 15 + 30
+        return frequencies, phase_shifts
+
+    def forward_with_frequencies_phase_shifts(self,
+                                            input,
+                                            style_dict,
+                                            ray_directions,
+                                            **kwargs):
+        """
+
+        :param input: (b, n, 3)
+        :param style_dict:
+        :param ray_directions:
+        :param kwargs:
+        :return:
+        """
+
+        input = self.grid_warper(input)
+        pos_emb = self.pos_emb(input)
+
+        x = pos_emb
+        frequencies, phase_shifts = self.get_freq_phase(style_dict=style_dict, name=f"{self.name_prefix}_network")
+        for index, layer in enumerate(self.network):
+            start = index * self.hidden_dim
+            end = (index+1) * self.hidden_dim
+
+            x = layer(x, frequencies[..., start:end], phase_shifts[..., start:end])
+
+        sigma = self.final_layer(x)
+
+        # rgb branch
+        dir_emb = self.dir_emb(ray_directions)
+        frequencies, phase_shifts = self.get_freq_phase(style_dict=style_dict, name=f"{self.name_prefix}_color_layer_sine")
+        rbg_sine = self.color_layer_sine(torch.cat([dir_emb, x], dim=-1), frequencies, phase_shifts)
+        rbg = self.color_layer_linear(rbg_sine)
+
+        out = torch.cat([rbg, sigma], dim=-1)
+        return out
+
+    def staged_forward(self,
+                       transformed_points,
+                       transformed_ray_directions_expanded,
+                       style_dict,
+                       max_points,
+                       num_steps,
+                       ):
+        batch_size, num_points, _ = transformed_points.shape
+
+        rgb_sigma_output = torch.zeros((batch_size, num_steps, self.rgb_dim + 1), device=self.device)
+
+        for b in range(batch_size):
+            head = 0
+            while head < num_points:
+                tail = head + max_points
+                rgb_sigma_output[b:b + 1, head:tail] = self(
+                    input=transformed_points[b:b + 1, head:tail],  # (b, h x w x s, 3)
+                    style_dict={name: style[b:b + 1] for name, style in style_dict.items()},
+                    ray_directions=transformed_ray_directions_expanded[b:b + 1, head:tail]
+                )
+                head = tail
+
+        rgb_sigma_output = rearrange(rgb_sigma_output, "b (hw s) rgb_sigma -> b hw s rgb_sigma", s=num_steps)
+        return rgb_sigma_output
 
 
 def sample_from_3dgrid(coordinates, grid):
