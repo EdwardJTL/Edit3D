@@ -2,6 +2,7 @@ import math
 import torch.nn as nn
 import torch
 
+
 class PosEmbedding(nn.Module):
     def __init__(self,
                  max_logscale,

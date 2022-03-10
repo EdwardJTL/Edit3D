@@ -213,16 +213,6 @@ class SPATIALSIRENBASELINE(nn.Module):
         rbg = torch.sigmoid(self.color_layer_linear(rbg))
         
         return torch.cat([rbg, sigma], dim=-1)
-    
-    
-    
-class UniformBoxWarp(nn.Module):
-    def __init__(self, sidelength):
-        super().__init__()
-        self.scale_factor = 2/sidelength
-
-    def forward(self, coordinates):
-        return coordinates * self.scale_factor
 
 
 def sample_from_3dgrid(coordinates, grid):
