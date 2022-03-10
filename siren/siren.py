@@ -227,6 +227,7 @@ class ShallowSIREN(nn.Module):
                  hidden_dim=256,
                  rgb_dim=3,
                  device=None,
+                 name_prefix='nerf',
                  ):
         super(ShallowSIREN, self).__init__()
 
@@ -234,6 +235,7 @@ class ShallowSIREN(nn.Module):
         self.z_dim = z_dim
         self.hidden_dim = hidden_dim
         self.rgb_dim = rgb_dim
+        self.name_prefix = name_prefix
 
         self.pos_emb = PosEmbedding(max_logscale=9, N_freqs=10)
         self.dir_emb = PosEmbedding(max_logscale=3, N_freqs=4)
