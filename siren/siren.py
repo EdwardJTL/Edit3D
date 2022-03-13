@@ -221,7 +221,7 @@ class SPATIALSIRENBASELINE(nn.Module):
         return torch.cat([rbg, sigma], dim=-1)
 
 
-class ShallowSIREN(nn.Module):
+class ShallowSIRENWithPosEmb(nn.Module):
     def __init__(self,
                  z_dim=128,
                  hidden_dim=256,
@@ -229,7 +229,7 @@ class ShallowSIREN(nn.Module):
                  device=None,
                  name_prefix='nerf',
                  ):
-        super(ShallowSIREN, self).__init__()
+        super(ShallowSIRENWithPosEmb, self).__init__()
 
         self.device = device
         self.z_dim = z_dim
