@@ -15,11 +15,13 @@ import random
 from .math_utils_torch import *
 
 
-def fancy_integration(rgb_sigma, z_vals, device, noise_std=0.5, last_back=False, white_back=False, clamp_mode=None, fill_mode=None):
+def fancy_integration(rgb_sigma, z_vals, device,
+                      dim_rgb=3,
+                      noise_std=0.5, last_back=False, white_back=False, clamp_mode=None, fill_mode=None):
     """Performs NeRF volumetric rendering."""
 
-    rgbs = rgb_sigma[..., :3]
-    sigmas = rgb_sigma[..., 3:]
+    rgbs = rgb_sigma[..., :dim_rgb]
+    sigmas = rgb_sigma[..., dim_rgb:]
 
     deltas = z_vals[:, :, 1:] - z_vals[:, :, :-1]
     delta_inf = 1e10 * torch.ones_like(deltas[:, :, :1])
