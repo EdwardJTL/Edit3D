@@ -117,6 +117,9 @@ def transform_sampled_points(
     h_mean=math.pi * 0.5,
     v_mean=math.pi * 0.5,
     mode="normal",
+    camera_pos=None,
+    camera_lookup=None,
+    up_vector=None,
 ):
     """Samples a camera position and maps points in camera space to world space."""
 
@@ -124,20 +127,26 @@ def transform_sampled_points(
 
     points, z_vals = perturb_points(points, z_vals, ray_directions, device)
 
-    camera_origin, pitch, yaw = sample_camera_positions(
-        n=points.shape[0],
-        r=1,
-        horizontal_stddev=h_stddev,
-        vertical_stddev=v_stddev,
-        horizontal_mean=h_mean,
-        vertical_mean=v_mean,
-        device=device,
-        mode=mode,
-    )
-    forward_vector = normalize_vecs(-camera_origin)
+    if camera_pos is None or camera_lookup is None:
+        # (b, 3) (b, 1) (b, 1)
+        camera_origin, pitch, yaw = sample_camera_positions(
+            n=points.shape[0],
+            r=1,
+            horizontal_stddev=h_stddev,
+            vertical_stddev=v_stddev,
+            horizontal_mean=h_mean,
+            vertical_mean=v_mean,
+            device=device,
+            mode=mode,
+        )
+        forward_vector = normalize_vecs(-camera_origin)  # (b, 3
+    else:
+        camera_origin = camera_pos
+        pitch = yaw = torch.zeros(n, 1, device=device)
+        forward_vector = normalize_vecs(camera_lookup)  #(b, 3)
 
     cam2world_matrix = create_cam2world_matrix(
-        forward_vector, camera_origin, device=device
+        forward_vector, camera_origin, device=device, up_vector=up_vector
     )
 
     points_homogeneous = torch.ones(
@@ -270,13 +279,14 @@ def sample_camera_positions(
     return output_points, phi, theta
 
 
-def create_cam2world_matrix(forward_vector, origin, device=None):
+def create_cam2world_matrix(forward_vector, origin, device=None, up_vector=None):
     """Takes in the direction the camera is pointing and the camera origin and returns a cam2world matrix."""
 
     forward_vector = normalize_vecs(forward_vector)
-    up_vector = torch.tensor([0, 1, 0], dtype=torch.float, device=device).expand_as(
-        forward_vector
-    )
+    if up_vector is None:
+        up_vector = torch.tensor([0, 1, 0], dtype=torch.float, device=device).expand_as(
+            forward_vector
+        )
 
     left_vector = normalize_vecs(torch.cross(up_vector, forward_vector, dim=-1))
 
