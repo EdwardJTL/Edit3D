@@ -12,6 +12,8 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import random
 
+from einops import rearrange, repeat
+
 from .math_utils_torch import *
 
 
@@ -362,3 +364,88 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
         bins_g[..., 1] - bins_g[..., 0]
     )
     return samples
+
+
+def get_world_points_and_direction(batch_size,
+                                   num_steps,
+                                   img_size,
+                                   fov,
+                                   ray_start,
+                                   ray_end,
+                                   h_stddev,
+                                   v_stddev,
+                                   h_mean,
+                                   v_mean,
+                                   sample_dist,
+                                   lock_view_dependence,
+                                   device='cpu',
+                                   camera_pos=None,
+                                   camera_lookup=None,
+                                   up_vector=None,
+                                   ):
+    """
+    Generate sample points and camera rays in the world coordinate system.
+
+    :param batch_size:
+    :param num_steps: number of samples for each ray
+    :param img_size:
+    :param fov:
+    :param ray_start:
+    :param ray_end:
+    :param h_stddev:
+    :param v_stddev:
+    :param h_mean:
+    :param v_mean:
+    :param sample_dist: mode for sample_camera_positions
+    :param lock_view_dependence:
+    :return:
+    - transformed_points: (b, h x w x num_steps, 3), has been perturbed
+    - transformed_ray_directions_expanded: (b, h x w x num_steps, 3)
+    - transformed_ray_origins: (b, h x w, 3)
+    - transformed_ray_directions: (b, h x w, 3)
+    - z_vals: (b, h x w, num_steps, 1), has been perturbed
+    - pitch: (b, 1)
+    - yaw: (b, 1)
+    """
+
+    # Generate initial camera rays and sample points.
+    # batch_size, pixels, num_steps, 1
+    points_cam, z_vals, rays_d_cam = get_initial_rays_trig(
+        n=batch_size,
+        num_steps=num_steps,
+        resolution=(img_size, img_size),
+        device=device,
+        fov=fov,
+        ray_start=ray_start,
+        ray_end=ray_end)
+
+    transformed_points, \
+    z_vals, \
+    transformed_ray_directions, \
+    transformed_ray_origins, \
+    pitch, yaw = transform_sampled_points(points_cam,
+                                          z_vals,
+                                          rays_d_cam,
+                                          h_stddev=h_stddev,
+                                          v_stddev=v_stddev,
+                                          h_mean=h_mean,
+                                          v_mean=v_mean,
+                                          device=device,
+                                          mode=sample_dist,
+                                          camera_pos=camera_pos,
+                                          camera_lookup=camera_lookup,
+                                          up_vector=up_vector)
+
+    transformed_ray_directions_expanded = repeat(
+        transformed_ray_directions, "b hw xyz -> b (hw s) xyz", s=num_steps
+    )
+    if lock_view_dependence:
+        transformed_ray_directions_expanded = torch.zeros_like(transformed_ray_directions_expanded)
+        transformed_ray_directions_expanded[..., -1] = -1
+
+    transformed_points = rearrange(transformed_points, "b hw s xyz -> b (hw s) xyz")
+
+    ret = (transformed_points, transformed_ray_directions_expanded,
+           transformed_ray_origins, transformed_ray_directions, z_vals,
+           pitch, yaw)
+    return ret
