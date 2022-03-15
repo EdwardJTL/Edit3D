@@ -161,10 +161,12 @@ def sample_camera_positions(device, n=1, r=1, horizontal_stddev=1, vertical_stdd
         v = torch.clamp(v, 1e-5, 1 - 1e-5)
         phi = torch.arccos(1 - 2 * v)
 
-    else:
+    elif mode == 'mean':
         # Just use the mean.
         theta = torch.ones((n, 1), device=device, dtype=torch.float) * horizontal_mean
         phi = torch.ones((n, 1), device=device, dtype=torch.float) * vertical_mean
+    else:
+        assert 0
 
     phi = torch.clamp(phi, 1e-5, math.pi - 1e-5)
 
