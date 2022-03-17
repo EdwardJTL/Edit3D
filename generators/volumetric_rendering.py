@@ -145,7 +145,7 @@ def transform_sampled_points(
     else:
         camera_origin = camera_pos
         pitch = yaw = torch.zeros(n, 1, device=device)
-        forward_vector = normalize_vecs(camera_lookup)  #(b, 3)
+        forward_vector = normalize_vecs(camera_lookup)  # (b, 3)
 
     cam2world_matrix = create_cam2world_matrix(
         forward_vector, camera_origin, device=device, up_vector=up_vector
@@ -366,23 +366,24 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
     return samples
 
 
-def get_world_points_and_direction(batch_size,
-                                   num_steps,
-                                   img_size,
-                                   fov,
-                                   ray_start,
-                                   ray_end,
-                                   h_stddev,
-                                   v_stddev,
-                                   h_mean,
-                                   v_mean,
-                                   sample_dist,
-                                   lock_view_dependence,
-                                   device='cpu',
-                                   camera_pos=None,
-                                   camera_lookup=None,
-                                   up_vector=None,
-                                   ):
+def get_world_points_and_direction(
+    batch_size,
+    num_steps,
+    img_size,
+    fov,
+    ray_start,
+    ray_end,
+    h_stddev,
+    v_stddev,
+    h_mean,
+    v_mean,
+    sample_dist,
+    lock_view_dependence,
+    device="cpu",
+    camera_pos=None,
+    camera_lookup=None,
+    up_vector=None,
+):
     """
     Generate sample points and camera rays in the world coordinate system.
 
@@ -417,35 +418,49 @@ def get_world_points_and_direction(batch_size,
         device=device,
         fov=fov,
         ray_start=ray_start,
-        ray_end=ray_end)
+        ray_end=ray_end,
+    )
 
-    transformed_points, \
-    z_vals, \
-    transformed_ray_directions, \
-    transformed_ray_origins, \
-    pitch, yaw = transform_sampled_points(points_cam,
-                                          z_vals,
-                                          rays_d_cam,
-                                          h_stddev=h_stddev,
-                                          v_stddev=v_stddev,
-                                          h_mean=h_mean,
-                                          v_mean=v_mean,
-                                          device=device,
-                                          mode=sample_dist,
-                                          camera_pos=camera_pos,
-                                          camera_lookup=camera_lookup,
-                                          up_vector=up_vector)
+    (
+        transformed_points,
+        z_vals,
+        transformed_ray_directions,
+        transformed_ray_origins,
+        pitch,
+        yaw,
+    ) = transform_sampled_points(
+        points_cam,
+        z_vals,
+        rays_d_cam,
+        h_stddev=h_stddev,
+        v_stddev=v_stddev,
+        h_mean=h_mean,
+        v_mean=v_mean,
+        device=device,
+        mode=sample_dist,
+        camera_pos=camera_pos,
+        camera_lookup=camera_lookup,
+        up_vector=up_vector,
+    )
 
     transformed_ray_directions_expanded = repeat(
         transformed_ray_directions, "b hw xyz -> b (hw s) xyz", s=num_steps
     )
     if lock_view_dependence:
-        transformed_ray_directions_expanded = torch.zeros_like(transformed_ray_directions_expanded)
+        transformed_ray_directions_expanded = torch.zeros_like(
+            transformed_ray_directions_expanded
+        )
         transformed_ray_directions_expanded[..., -1] = -1
 
     transformed_points = rearrange(transformed_points, "b hw s xyz -> b (hw s) xyz")
 
-    ret = (transformed_points, transformed_ray_directions_expanded,
-           transformed_ray_origins, transformed_ray_directions, z_vals,
-           pitch, yaw)
+    ret = (
+        transformed_points,
+        transformed_ray_directions_expanded,
+        transformed_ray_origins,
+        transformed_ray_directions,
+        z_vals,
+        pitch,
+        yaw,
+    )
     return ret

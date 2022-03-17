@@ -4,11 +4,13 @@ import torch
 
 
 class PosEmbedding(nn.Module):
-    def __init__(self,
-                 max_logscale,
-                 N_freqs,
-                 logscale=True,
-                 multi_pi=False,):
+    def __init__(
+        self,
+        max_logscale,
+        N_freqs,
+        logscale=True,
+        multi_pi=False,
+    ):
         """
         Defines a function that embeds x to (x, sin(2^k x), cos(2^k x), ...)
         """
@@ -20,7 +22,7 @@ class PosEmbedding(nn.Module):
         if logscale:
             self.freqs = 2 ** torch.linspace(0, max_logscale, N_freqs)
         else:
-            self.freqs = torch.linspace(0, 2 ** max_logscale, N_freqs)
+            self.freqs = torch.linspace(0, 2**max_logscale, N_freqs)
 
         if multi_pi:
             self.freqs = self.freqs * math.pi

@@ -19,6 +19,7 @@ def normalize_vecs(vectors: torch.Tensor) -> torch.Tensor:
     """
     return vectors / (torch.norm(vectors, dim=-1, keepdim=True))
 
+
 def torch_dot(x: torch.Tensor, y: torch.Tensor):
     """
     Dot product of two tensors.

@@ -13,7 +13,7 @@ class INRNetwork(nn.Module):
         hidden_layers,
         rgb_dim=3,
         device=None,
-        name_prefix='inr',
+        name_prefix="inr",
     ):
         super(INRNetwork, self).__init__()
 
@@ -27,10 +27,7 @@ class INRNetwork(nn.Module):
             [
                 FiLMLayer(input_dim, hidden_dim),
             ]
-            + [
-                FiLMLayer(hidden_dim, hidden_dim)
-                for _ in range(hidden_layers - 1)
-            ]
+            + [FiLMLayer(hidden_dim, hidden_dim) for _ in range(hidden_layers - 1)]
         )
         self.network.apply(frequency_init(25))
 
@@ -55,7 +52,8 @@ class INRNetwork(nn.Module):
         x = input
 
         frequencies, phase_shifts = self.get_freq_phase(
-          style_dict=style_dict, name=f"{self.name_prefix}_network")
+            style_dict=style_dict, name=f"{self.name_prefix}_network"
+        )
         for index, layer in enumerate(self.network):
             start = index * self.hidden_dim
             end = (index + 1) * self.hidden_dim
@@ -70,4 +68,3 @@ class INRNetwork(nn.Module):
         frequencies, phase_shifts = styles.unbind(-1)
         frequencies = frequencies * 15 + 30
         return frequencies, phase_shifts
-
