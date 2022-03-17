@@ -636,3 +636,52 @@ class MultiScaleAuxDiscriminator(nn.Module):
                  ):
         super().__init__()
 
+        self.main_disc = MultiScaleDiscriminator(
+            diffaug=diffaug,
+            max_size=max_size,
+            channel_multiplier=channel_multiplier,
+            first_downsample=first_downsample,
+            stddev_group=stddev_group
+        )
+
+        # Auxiliary Discriminator
+        channel_multiplier = 2
+        channels = {
+            4: 128 * channel_multiplier,
+            8: 128 * channel_multiplier,
+            16: 128 * channel_multiplier,
+            32: 128 * channel_multiplier,
+            64: 128 * channel_multiplier,
+            128: 128 * channel_multiplier,
+            256: 64 * channel_multiplier,
+            512: 32 * channel_multiplier,
+            1024: 16 * channel_multiplier,
+        }
+        self.aux_disc = MultiScaleDiscriminator(
+            diffaug=diffaug,
+            max_size=max_size,
+            channel_multiplier=channel_multiplier,
+            first_downsample=True,
+            channels=channels,
+            stddev_group=stddev_group
+        )
+
+        return
+
+    def forward(self,
+                input,
+                use_aux_disc=False,
+                summary_ddict=None,
+                alpha=1.,
+                **kwargs):
+        if use_aux_disc:
+            b = input.shape[0] // 2
+            main_input = input[:b]
+            aux_input = input[b:]
+            main_out, latent, position = self.main_disc(main_input, alpha, summary_ddict=summary_ddict)
+            aux_out, _, _ = self.aux_disc(aux_input, alpha)
+            out = torch.cat([main_out, aux_out], dim=0)
+        else:
+            out, latent, position = self.main_disc(input, alpha, summary_ddict=summary_ddict)
+
+        return out, latent, position
