@@ -47,6 +47,15 @@ def train(rank,
     setup_ddp(rank, world_size, opt)
     device = torch.device(rank)
 
+    curriculum = getattr(curriculums, opt.curriculum)
+    metadata = curriculums.extract_metadata(curriculum, 0)
+
+    scaler_G = torch.cuda.amp.GradScaler(enabled=metadata['use_amp_G'])
+    scaler_D = torch.cuda.amp.GradScaler(enabled=metadata['use_amp_D'])
+
+    # Initialize the model
+    
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

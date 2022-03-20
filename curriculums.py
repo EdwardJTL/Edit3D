@@ -143,4 +143,6 @@ CARLA = {
     "z_lambda": 0,
     "pos_lambda": 0,
     "learnable_dist": False,
+    "use_amp_G": False,
+    "use_amp_D": False,
 }
