@@ -54,7 +54,7 @@ def train(rank,
     scaler_D = torch.cuda.amp.GradScaler(enabled=metadata['use_amp_D'])
 
     # Initialize the model
-    
+
 
 
 if __name__ == '__main__':
