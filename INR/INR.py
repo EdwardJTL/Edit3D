@@ -466,6 +466,7 @@ class CIPSNet(nn.Module):
 
         self.style_dim_dict = {}
 
+        _out_dim = input_dim
         network = OrderedDict()
         to_rbgs = OrderedDict()
 
