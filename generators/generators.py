@@ -1730,7 +1730,7 @@ class CIPSGeneratorNerfINR(nn.Module):
     def __init__(
         self,
         z_dim,
-        siren,
+        siren_model,
         inr,
         mapping_network_nerf,
         mapping_network_inr,
@@ -1741,7 +1741,7 @@ class CIPSGeneratorNerfINR(nn.Module):
         self.z_dim = z_dim
         self.device = device
 
-        self.siren = siren
+        self.siren = siren_model
         self.mapping_network_nerf = mapping_network_nerf
         self.inr = inr
         self.mapping_network_inr = mapping_network_inr

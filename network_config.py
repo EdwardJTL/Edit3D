@@ -1,6 +1,7 @@
 import abc
 
 from generators.generators import CIPSGeneratorNerfINR
+from generators.mapping import MultiHeadMappingNetwork
 from INR.INR import CIPSNet
 from siren.siren import ShallownSIREN
 
@@ -54,3 +55,39 @@ class ShallowSIRENConfig(NetworkConfig):
             style_dim=self.config['style_dim'],
             rgb_dim=self.config['rgb_dim']
         )
+
+
+class INRMultiHeadMappingConfig(NetworkConfig):
+    def __init__(self):
+        config = {
+            'z_dim': 512,
+            'hidden_dim': 512,
+            'base_layers': 8,
+            'head_layers': 0,
+            'add_norm': True,
+            'norm_out': True,
+        }
+
+        super().__init__(config, MultiHeadMappingNetwork)
+
+    def build_model(self, inr_model):
+        self.config['head_dim_dict'] = inr_model.style_dim_dict
+        return self.constructor(**self.config)
+
+
+class SirenMultiHeadMappingConfig(NetworkConfig):
+    def __init__(self):
+        config = {
+            'z_dim': 256,
+            'hidden_dim': 128,
+            'base_layers': 2,
+            'head_layers': 0,
+            'add_norm': False,
+            'norm_out': False,
+        }
+
+        super().__init__(config, MultiHeadMappingNetwork)
+
+    def build_model(self, siren):
+        self.config['head_dim_dict'] = siren.style_dim_dict
+        return self.constructor(**self.config)
