@@ -1726,7 +1726,7 @@ class NerfINRGenerator(nn.Module):
         return pixels, torch.cat([pitch, yaw], -1)
 
 
-class CIPSGeneratorNerfINR(NerfINRGenerator):
+class CIPSGeneratorNerfINR(nn.Module):
     def __init__(
         self,
         z_dim,
@@ -1735,9 +1735,8 @@ class CIPSGeneratorNerfINR(NerfINRGenerator):
         mapping_network_nerf,
         mapping_network_inr,
         device="cuda",
-        **kwargs,
     ):
-        super(NerfINRGenerator, self).__init__()
+        super().__init__()
 
         self.z_dim = z_dim
         self.device = device

@@ -94,6 +94,20 @@ def frequency_init(freq):
     return init
 
 
+class LinearScale(nn.Module):
+    def __init__(self,
+                 scale,
+                 bias):
+        super(LinearScale, self).__init__()
+        self.scale_v = scale
+        self.bias_v = bias
+        return
+
+    def forward(self, x):
+        out = x * self.scale_v + self.bias_v
+        return out
+
+
 class FiLMLayer(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super().__init__()
@@ -104,6 +118,64 @@ class FiLMLayer(nn.Module):
         freq = freq.unsqueeze(1).expand_as(x)
         phase_shift = phase_shift.unsqueeze(1).expand_as(x)
         return torch.sin(freq * x + phase_shift)
+
+
+class StyleFiLMLayer(nn.Module):
+    def __init__(self,
+                 in_dim,
+                 out_dim,
+                 style_dim,
+                 use_style_fc=True,
+                 which_linear=nn.Linear
+                 ):
+        super().__init__()
+
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.style_dim = style_dim
+        self.use_style_fc = use_style_fc
+
+        self.linear = which_linear(in_dim, out_dim)
+        self.linear.apply(frequency_init(25))
+
+        self.gain_scale = LinearScale(scale=15, bias=30)
+
+        if use_style_fc:
+            self.gain_fc = which_linear(style_dim, out_dim)
+            self.bias_fc = which_linear(style_dim, out_dim)
+            self.gain_fc.weight.data.mul_(0.25)
+            self.bias_fc.weight.data.mul_(0.25)
+        else:
+            self.style_dim = out_dim * 2
+
+        return
+
+    def forward(self, x, style):
+        """
+
+        :param x: (b, c) or (b, n, c)
+        :param style: (b, c)
+        :return:
+        """
+        if self.use_style_fc:
+            gain = self.gain_scale(self.gain_fc(style))
+            bias = self.bias_fc(style)
+        else:
+            style = rearrange(style, "b (n c) -> b n c", n=2)
+            gain, bias = style.unbind(dim=1)
+            gain = self.gain_scale(gain)
+
+        if x.dim() == 3:
+            gain = rearrange(gain, "b c -> b 1 c")
+            bias = rearrange(bias, "b c -> b 1 c")
+        elif x.dim() == 2:
+            return
+        else:
+            raise NotImplementedError
+
+        x = self.linear(x)
+        out = torch.sin(gain * x + bias)
+        return out
 
 
 class TALLSIREN(nn.Module):
@@ -397,6 +469,138 @@ class ShallowSIRENWithPosEmb(nn.Module):
         rgb_sigma_output = rearrange(
             rgb_sigma_output, "b (hw s) rgb_sigma -> b hw s rgb_sigma", s=num_steps
         )
+        return rgb_sigma_output
+
+
+class ShallownSIREN(nn.Module):
+    def __init__(self,
+                 in_dim=3,
+                 hidden_dim=256,
+                 hidden_layers=2,
+                 style_dim=512,
+                 rgb_dim=3,
+                 device=None,
+                 name_prefix='nerf',
+                 ):
+        super(ShallownSIREN, self).__init__()
+
+        self.device = device
+        self.in_dim = in_dim
+        self.hidden_dim = hidden_dim
+        self.rgb_dim = rgb_dim
+        self.style_dim = style_dim
+        self.hidden_layers = hidden_layers
+        self.name_prefix = name_prefix
+
+        self.style_dim_dict = {}
+
+        self.network = nn.ModuleList()
+
+        _out_dim = in_dim
+        for idx in range(hidden_layers):
+            _in_dim = _out_dim
+            _out_dim = hidden_dim
+
+            _layer = StyleFiLMLayer(in_dim=_in_dim, out_dim=_out_dim, style_dim=style_dim, use_style_fc=True)
+
+            self.network.append(_layer)
+            self.style_dim_dict[f"{self.name_prefix}_network_{idx}"] = _layer.style_dim
+
+        self.final_layer = nn.Linear(hidden_dim, 1)
+
+        _in_dim = hidden_dim
+        _out_dim = hidden_dim // 2
+        self.color_layer_sine = StyleFiLMLayer(in_dim=_in_dim, out_dim=_out_dim, style_dim=style_dim, use_style_fc=True)
+        self.style_dim_dict[f"{self.name_prefix}_rgb"] = self.color_layer_sine.style_dim
+
+        self.color_layer_linear = nn.Sequential(
+            nn.Linear(_out_dim, rgb_dim),
+        )
+        self.color_layer_linear.apply(kaiming_leaky_init)
+
+        self.dim_styles = sum(self.style_dim_dict.values())
+
+        # Don't worry about this, it was added to ensure compatibility with another model.
+        # Shouldn't affect performance.
+        self.grid_warper = UniformBoxWarp(0.24)
+
+    def forward(self,
+                x,
+                style_dict,
+                ray_directions
+                ):
+        out = self.forward_with_frequencies_phase_shifts(
+            input=input,
+            style_dict=style_dict,
+            ray_directions=ray_directions,
+        )
+
+        return out
+
+    def forward_with_frequencies_phase_shifts(self,
+                                              x,
+                                              style_dict,
+                                              ray_directions,
+                                              ):
+        """
+
+        :param input: (b, n, 3)
+        :param style_dict:
+        :param ray_directions:
+        :param kwargs:
+        :return:
+        """
+
+        x = self.grid_warper(x)
+
+        for index, layer in enumerate(self.network):
+            style = style_dict[f"{self.name_prefix}_network_{index}"]
+            x = layer(x, style)
+
+        sigma = self.final_layer(x)
+
+        # rgb branch
+        style = style_dict[f"{self.name_prefix}_rgb"]
+        x = self.color_layer_sine(x, style)
+
+        rbg = self.color_layer_linear(x)
+
+        out = torch.cat([rbg, sigma], dim=-1)
+        return out
+
+    def get_freq_phase(self, style_dict, name):
+        style = style_dict[name]
+        style = rearrange(style, "b (n d) -> b d n", n=2)
+        frequencies, phase_shifts = style.unbind(-1)
+        frequencies = frequencies * 15 + 30
+        return frequencies, phase_shifts
+
+    def staged_forward(self,
+                       transformed_points,
+                       transformed_ray_directions_expanded,
+                       style_dict,
+                       max_points,
+                       num_steps,
+                       ):
+        batch_size, num_points, _ = transformed_points.shape
+
+        rgb_sigma_output = torch.zeros(
+            (batch_size, num_points, self.rgb_dim + 1),
+            device=self.device,
+        )
+
+        for b in range(batch_size):
+            head = 0
+            while head < num_points:
+                tail = head + max_points
+                rgb_sigma_output[b:b+1, head:tail] = self(
+                    input=transformed_points[b:b+1, head:tail],
+                    style_dict={name: style[b:b + 1] for name, style in style_dict.items()},
+                    ray_directions=transformed_ray_directions_expanded[b:b + 1, head:tail]
+                )
+                head += max_points
+
+        rgb_sigma_output = rearrange(rgb_sigma_output, "b (hw s) rgb_sigma -> b hw s rgb_sigma", s=num_steps)
         return rgb_sigma_output
 
 
