@@ -2,6 +2,7 @@ import abc
 
 from generators.generators import CIPSGeneratorNerfINR
 from generators.mapping import MultiHeadMappingNetwork
+from discriminators.discriminators import MultiScaleAuxDiscriminator
 from INR.INR import CIPSNet
 from siren.siren import ShallownSIREN
 
@@ -90,4 +91,19 @@ class SirenMultiHeadMappingConfig(NetworkConfig):
 
     def build_model(self, siren):
         self.config['head_dim_dict'] = siren.style_dim_dict
+        return self.constructor(**self.config)
+
+
+class MultiScaleAuxDiscriminatorConfig(NetworkConfig):
+    def __init__(self):
+        config = {
+            'diffaug': False,
+            'max_size': 1024,
+            'channel_multiplier': 2,
+            'first_downsample': False,
+            'stddev_group': 0,
+        }
+        super().__init__(config, MultiScaleAuxDiscriminator)
+
+    def build_model(self, inr_model):
         return self.constructor(**self.config)

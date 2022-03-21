@@ -41,6 +41,29 @@ def cleanup():
     dist.destroy_process_group()
 
 
+def build_optimizer(generator_ddp,
+                    discriminator_ddp,
+                    metadata):
+    if metadata['unique_lr'] == False:
+        optimizer_G = torch.optim.Adam(
+            generator_ddp.parameters(),
+            lr=metadata['gen_lr'],
+            betas=metadata['betas'],
+            weight_decay=metadata['weight_decay']
+        )
+    else:
+        raise NotImplementedError
+
+    optimizer_D = torch.optim.Adam(
+        discriminator_ddp.parameters(),
+        lr=metadata['disc_lr'],
+        betas=metadata['betas'],
+        weight_decay=metadata['weight_decay']
+    )
+
+    return optimizer_G, optimizer_D
+
+
 def train(rank,
           world_size,
           opt):
@@ -67,7 +90,39 @@ def train(rank,
         mapping_network_nerf=siren_mapping,
         mapping_network_inr=inr_mapping,
     ).to(device)
-    
+    discriminator = getattr(discriminators, metadata['discriminator']).build_model().to(device)
+
+    # ema
+    ema = ExponentialMovingAverage(generator, decay=0.999)
+    ema2 = ExponentialMovingAverage(generator, decay=0.9999)
+
+    # ddp
+    generator_ddp = DDP(generator, device_ids=[rank], find_unused_parameters=True)
+    discriminator_ddp = DDP(discriminator, device_ids=[rank], find_unused_parameters=True, broadcast_buffers=False)
+    generator = generator_ddp.module
+    discriminator = discriminator_ddp.module
+
+    # optimizer
+    optimizer_G, optimizer_D = build_optimizer(generator_ddp, discriminator_ddp, metadata)
+
+    state_dict = {
+        'cur_fid': np.inf,
+        'best_fid': np.inf,
+        'worst_fid': 0,
+        'step': 0,
+    }
+
+    model_dict = {
+        'generator': generator_ddp.module,
+        'discriminator': discriminator_ddp.module,
+        'state_dict': state_dict,
+    }
+
+    # load checkpoint
+    # todo: load checkpoint
+
+    # training
+    torch.manual_seed(rank)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
