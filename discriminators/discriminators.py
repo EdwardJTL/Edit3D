@@ -626,6 +626,7 @@ class MultiScaleDiscriminator(nn.Module):
         latent, position = None, None
         return out, latent, position
 
+
 class MultiScaleAuxDiscriminator(nn.Module):
     def __init__(self,
                  diffaug,
