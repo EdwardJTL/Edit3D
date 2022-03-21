@@ -16,6 +16,8 @@ from torchvision.utils import save_image
 from generators import generators
 from discriminators import discriminators
 from siren import siren
+from generators import mapping
+import network_config
 
 import curriculums
 from tqdm import tqdm
@@ -54,8 +56,18 @@ def train(rank,
     scaler_D = torch.cuda.amp.GradScaler(enabled=metadata['use_amp_D'])
 
     # Initialize the model
-
-
+    inr_model = getattr(network_config, metadata['inr_model']).build_model().to(device)
+    siren_model = getattr(network_config, metadata['siren_model']).build_model().to(device)
+    inr_mapping = getattr(network_config, metadata['inr_mapping']).build_model(inr_model.style_dim_dict).to(device)
+    siren_mapping = getattr(network_config, metadata['siren_mapping']).build_model(siren_model.style_dim_dict).to(device)
+    generator = getattr(generators, metadata['generator'])(
+        z_dim=metadata['latent_dim'],
+        siren_model=siren_model,
+        inr=inr_model,
+        mapping_network_nerf=siren_mapping,
+        mapping_network_inr=inr_mapping,
+    ).to(device)
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
