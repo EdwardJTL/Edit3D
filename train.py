@@ -429,30 +429,31 @@ def train(rank, world_size, opt):
                         f"[Experiment: {opt.output_dir}] [GPU: {os.environ['CUDA_VISIBLE_DEVICES']}] [Epoch: {discriminator.epoch}/{opt.n_epochs}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}] [Step: {discriminator.step}] [Alpha: {alpha:.2f}] [Img Size: {metadata['img_size']}] [Batch Size: {metadata['batch_size']}] [Scale: {scaler_G.get_scale()}, {scaler_D.get_scale()}]"
                     )
 
-                if discriminator.step % opt.sample_interval == 0:
-                    generator_ddp.eval()
-                    gen_images(
-                        rank=rank,
-                        world_size=world_size,
-                        generator=ema,
-                        G_kwargs={
-                            "fov": metadata["fov"],
-                            "ray_start": metadata["ray_start"],
-                            "ray_end": metadata["ray_end"],
-                            "num_steps": metadata["num_steps"],
-                            "h_stddev": metadata["h_stddev"],
-                            "v_stddev": metadata["v_stddev"],
-                            "hierarchical_sample": metadata["hierarchical_sample"],
-                            "psi": 1,
-                            "sample_distance": metadata["z_dist"],
-                        },
-                        fake_dir=os.path.join(opt.output_dir, "evaluation/generated"),
-                        num_imgs=2048,
-                        img_size=metadata["img_size"],
-                        batch_size=metadata["batch_size"],
-                    )
-
-                    synchronize()
+                # todo: sample image
+                # if discriminator.step % opt.sample_interval == 0:
+                #     generator_ddp.eval()
+                #     gen_images(
+                #         rank=rank,
+                #         world_size=world_size,
+                #         generator=ema,
+                #         G_kwargs={
+                #             "fov": metadata["fov"],
+                #             "ray_start": metadata["ray_start"],
+                #             "ray_end": metadata["ray_end"],
+                #             "num_steps": metadata["num_steps"],
+                #             "h_stddev": metadata["h_stddev"],
+                #             "v_stddev": metadata["v_stddev"],
+                #             "hierarchical_sample": metadata["hierarchical_sample"],
+                #             "psi": 1,
+                #             "sample_distance": metadata["z_dist"],
+                #         },
+                #         fake_dir=os.path.join(opt.output_dir, "evaluation/generated"),
+                #         num_imgs=2048,
+                #         img_size=metadata["img_size"],
+                #         batch_size=metadata["batch_size"],
+                #     )
+                #
+                #     synchronize()
 
                 if discriminator.step % opt.sample_interval == 0:
                     torch.save(
