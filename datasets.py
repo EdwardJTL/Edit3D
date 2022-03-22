@@ -134,6 +134,38 @@ class ShapeNetCars(Dataset):
         return X, 0
 
 
+class StyleGANCars(Dataset):
+    """StyleGAN Cars Dataset"""
+
+    def __init__(self, dataset_path, img_size, **kwargs):
+        super().__init__()
+
+        self.data = glob.glob(dataset_path)
+        assert (
+            len(self.data) > 0
+        ), "Can't find data; make sure you specify the path to your dataset"
+        self.transform = transforms.Compose(
+            [
+                transforms.CenterCrop(384),
+                transforms.Resize(
+                    (img_size, img_size),
+                    interpolation=torchvision.transforms.InterpolationMode.BILINEAR,
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize([0.5], [0.5]),
+            ]
+        )
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        X = PIL.Image.open(self.data[index])
+        X = self.transform(X)
+
+        return X, 0
+
+
 def get_dataset(name, subsample=None, batch_size=1, **kwargs):
     dataset = globals()[name](**kwargs)
 
