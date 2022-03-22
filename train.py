@@ -43,6 +43,26 @@ def cleanup():
     dist.destroy_process_group()
 
 
+def sampler(
+        z,
+        generator,
+        metadata,
+        output_dir,
+        img_name
+):
+    generator.eval()
+    with torch.no_grad():
+        with torch.cuda.amp.autocast():
+            generated_imgs = generator(z, forward_points=256**2, **metadata)[0]
+            save_image(
+                generated_imgs,
+                os.path.join(output_dir, f"{img_name}.png"),
+                nrow=5,
+                normalize=True,
+            )
+    return
+
+
 def build_optimizer(generator_ddp, discriminator_ddp, metadata):
     if metadata["unique_lr"] == False:
         optimizer_G = torch.optim.Adam(
@@ -151,6 +171,8 @@ def train(rank, world_size, opt):
 
     generator_losses = []
     discriminator_losses = []
+
+    fixed_zs = generator.get_zs(b=25)
 
     for _ in range(opt.n_epochs):
         total_progress_bar.update(1)
@@ -430,30 +452,29 @@ def train(rank, world_size, opt):
                     )
 
                 # todo: sample image
-                # if discriminator.step % opt.sample_interval == 0:
-                #     generator_ddp.eval()
-                #     gen_images(
-                #         rank=rank,
-                #         world_size=world_size,
-                #         generator=ema,
-                #         G_kwargs={
-                #             "fov": metadata["fov"],
-                #             "ray_start": metadata["ray_start"],
-                #             "ray_end": metadata["ray_end"],
-                #             "num_steps": metadata["num_steps"],
-                #             "h_stddev": metadata["h_stddev"],
-                #             "v_stddev": metadata["v_stddev"],
-                #             "hierarchical_sample": metadata["hierarchical_sample"],
-                #             "psi": 1,
-                #             "sample_distance": metadata["z_dist"],
-                #         },
-                #         fake_dir=os.path.join(opt.output_dir, "evaluation/generated"),
-                #         num_imgs=2048,
-                #         img_size=metadata["img_size"],
-                #         batch_size=metadata["batch_size"],
-                #     )
-                #
-                #     synchronize()
+                if discriminator.step % opt.sample_interval == 0:
+                    with torch.no_grad():
+                        copied_metadata = copy.deepcopy(metadata)
+                        copied_metadata['h_stddev'] = copied_metadata['v_stddev'] = 0
+                        copied_metadata['img_size'] = 128
+                    sampler(
+                        z=fixed_zs,
+                        generator=generator_ddp,
+                        metadata={
+                            "img_size": copied_metadata["img_size"],
+                            "fov": copied_metadata["fov"],
+                            "ray_start": copied_metadata["ray_start"],
+                            "ray_end": copied_metadata["ray_end"],
+                            "num_steps": copied_metadata["num_steps"],
+                            "h_stddev": copied_metadata["h_stddev"],
+                            "v_stddev": copied_metadata["v_stddev"],
+                            "hierarchical_sample": copied_metadata["hierarchical_sample"],
+                            "psi": 1,
+                            "sample_distance": copied_metadata["z_dist"],
+                        },
+                        output_dir=opt.output_dir,
+                        img_name=f"{discriminator.step}",
+                    )
 
                 if discriminator.step % opt.sample_interval == 0:
                     torch.save(
