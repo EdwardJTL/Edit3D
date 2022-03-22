@@ -522,6 +522,8 @@ class MultiScaleDiscriminator(nn.Module):
                  stddev_group=4
                  ):
         super().__init__()
+        self.epoch = 0
+        self.step = 0
 
         self.diffaug = diffaug
         self.max_size = max_size
@@ -636,6 +638,8 @@ class MultiScaleAuxDiscriminator(nn.Module):
                  stddev_group=0
                  ):
         super().__init__()
+        self.epoch = 0
+        self.step = 0
 
         self.main_disc = MultiScaleDiscriminator(
             diffaug=diffaug,

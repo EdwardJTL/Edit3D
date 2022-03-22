@@ -3,6 +3,7 @@ import os
 import numpy as np
 import math
 
+import collections
 from collections import deque
 
 import torch
@@ -19,6 +20,7 @@ from siren import siren
 from generators import mapping
 import network_config
 
+import datasets
 import curriculums
 from tqdm import tqdm
 from datetime import datetime
@@ -123,6 +125,176 @@ def train(rank,
 
     # training
     torch.manual_seed(rank)
+    dataloader = None
+    total_progress_bar = tqdm(total=opt.n_epochs, desc="Total progress", dynamic_ncols=True)
+    total_progress_bar.update(discriminator.epoch)
+    interior_step_bar = tqdm(dynamic_ncols=True)
+
+    summary_ddict = collections.defaultdict(dict)
+
+    for _ in range(opt.n_epochs):
+        total_progress_bar.update(1)
+
+        metadata = curriculums.extract_metadata(curriculum, discriminator.step)
+
+        # Set learning rates
+        for param_group in optimizer_G.param_groups:
+            if param_group.get('name', None) == 'mapping_network':
+                param_group['lr'] = metadata['gen_lr'] * 5e-2
+            else:
+                param_group['lr'] = metadata['gen_lr']
+            param_group['betas'] = metadata['betas']
+            param_group['weight_decay'] = metadata['weight_decay']
+        for param_group in optimizer_D.param_groups:
+            param_group['lr'] = metadata['disc_lr']
+            param_group['betas'] = metadata['betas']
+            param_group['weight_decay'] = metadata['weight_decay']
+
+        if not dataloader or dataloader.batch_size != metadata['batch_size']:
+            dataloader, CHANNELS = datasets.get_dataset_distributed(metadata['dataset'],
+                                                                    world_size,
+                                                                    rank,
+                                                                    **metadata)
+
+            step_next_upsample = curriculums.next_upsample_step(curriculum, discriminator.step)
+            step_last_upsample = curriculums.last_upsample_step(curriculum, discriminator.step)
+
+            interior_step_bar.reset(total=(step_next_upsample - step_last_upsample))
+            interior_step_bar.set_description(f"Progress to next stage")
+            interior_step_bar.update((discriminator.step - step_last_upsample))
+
+        for i, (imgs, _) in enumerate(dataloader):
+            if discriminator.step % opt.model_save_interval == 0 and rank == 0:
+                now = datetime.now()
+                now = now.strftime("%d--%H:%M--")
+                torch.save(ema.state_dict(), os.path.join(opt.output_dir, now + 'ema.pth'))
+                torch.save(ema2.state_dict(), os.path.join(opt.output_dir, now + 'ema2.pth'))
+                torch.save(generator_ddp.module, os.path.join(opt.output_dir, now + 'generator.pth'))
+                torch.save(discriminator_ddp.module, os.path.join(opt.output_dir, now + 'discriminator.pth'))
+                torch.save(optimizer_G.state_dict(), os.path.join(opt.output_dir, now + 'optimizer_G.pth'))
+                torch.save(optimizer_D.state_dict(), os.path.join(opt.output_dir, now + 'optimizer_D.pth'))
+            metadata = curriculums.extract_metadata(curriculum, discriminator.step)
+
+            if dataloader.batch_size != metadata['batch_size']:
+                break
+
+            generator_ddp.train()
+            discriminator_ddp.train()
+
+            alpha = min(1, (discriminator.step - step_last_upsample) / (metadata['fade_steps']))
+
+            real_imgs = imgs.to(device, non_blocking=True)
+
+            metadata['nerf_noise'] = max(0, 1. - discriminator.step/5000.)
+
+            aux_reg = metadata['train_aux_img'] and (discriminator.step % metadata['aux_img_interval'] == 0)
+
+
+            # TRAIN DISCRIMINATOR
+            with torch.cuda.amp.autocast():
+                # Generate images for discriminator training
+                with torch.no_grad():
+                    zs_list = generator.get_zs(real_imgs.shape[0], batch_split=metadata['batch_split'])
+                    if metadata['batch_split'] == 1:
+                        zs_list = [zs_list]
+                    gen_imgs = []
+                    gen_imgs_aux = []
+                    gen_positions = []
+                    gen_positions_aux = []
+                    if metadata['img_size'] >= 256 and metadata['forward_points'] is not None:
+                        forward_points = metadata['forward_points'] ** 2
+                    else:
+                        forward_points = None
+                    for subset_z in zs_list:
+                        g_imgs, g_pos = generator_ddp(
+                            subset_z,
+                            img_size=metadata['img_size'],
+                            nerf_noise=metadata['nerf_noise'],
+                            return_aux_img=aux_reg,
+                            forward_points=forward_points,
+                            grad_points=None,
+                            fov=metadata['fov'],
+                            ray_start=metadata['ray_start'],
+                            ray_end=metadata['ray_end'],
+                            num_steps=metadata['num_steps'],
+                            h_stddev=metadata['h_stddev'],
+                            v_stddev=metadata['v_stddev'],
+                            hierarchical_sample=metadata['hierarchical_sample'],
+                            psi=1,
+                            sample_distance=metadata['z_dist'],
+                        )
+                        if metadata['batch_split'] > 1:
+                            Gz, Gz_aux = g_imgs.chunk(metadata['batch_split'])
+                            gen_imgs.append(Gz)
+                            gen_imgs_aux.append(Gz_aux)
+                            Gpos, Gpos_aux = g_pos.chunk(metadata['batch_split'])
+                            gen_positions.append(Gpos)
+                            gen_positions_aux.append(Gpos_aux)
+                        else:
+                            gen_imgs.append(g_imgs)
+                            gen_positions.append(g_pos)
+                # end of no grad
+                if aux_reg:
+                    real_imgs = torch.cat([real_imgs, real_imgs], dim=0)
+                real_imgs.requires_grad_()
+                r_preds, _, _ = discriminator_ddp(
+                    real_imgs,
+                    alpha=alpha,
+                    use_aux_disc=aux_reg,
+                    summary_ddict=summary_ddict,
+                )
+
+            d_regularize = discriminator.step & metadata['d_reg_interval'] == 0
+            if metadata['r1_lambda'] > 0 and d_regularize:
+                # Gradient Penalty
+                grad_real = torch.autograd.grad(
+                    outputs=scaler_D.scale(r_preds.sum()),
+                    inputs=real_imgs,
+                    create_graph=True,
+                )
+                inv_scale = 1. / scaler_D.get_scale()
+                grad_real = [p * inv_scale for p in grad_real][0]
+
+            with torch.cuda.amp.autocast(metadata['use_amp_D']):
+                if metadata['r1_lambda'] > 0 and d_regularize:
+                    grad_penalty = grad_real.flatten(start_dim=1).square().sum(dim=1, keepdim=True)
+                    grad_penalty = 0.5 * metadata['r1_lambda'] * grad_penalty * metadata['d_reg_interval'] + 0. * r_preds
+                else:
+                    grad_penalty = 0
+
+                g_preds, _, _ = discriminator_ddp(gen_imgs, alpha=alpha, use_aux_disc=aux_reg)
+
+                d_loss = (torch.nn.functional.softplus(g_preds) +
+                          torch.nn.functional.softplus(-r_preds) +
+                          grad_penalty).mean()
+
+                if rank == 0:
+                    with torch.no_grad():
+                        summary_ddict['D_logits']['D_logits_real'] = r_preds.mean().item()
+                        summary_ddict['D_logits']['D_logits_fake'] = g_preds.mean().item()
+                        summary_ddict['grad_penalty']['grad_penalty'] = grad_penalty.mean().item()
+
+            optimizer_D.zero_grad()
+            scaler_D.scale(d_loss).backward()
+            scaler_D.unscale_(optimizer_D)
+
+            try:
+                D_total_norm = torch.nn.utils.clip_grad_norm_(
+                    discriminator_ddp.parameters(),
+                    metadata['grad_clip'],
+                )
+                summary_ddict['D_total_norm']['D_total_norm'] = D_total_norm.item()
+            except:
+                summary_ddict['D_total_norm']['D_total_norm'] = np.nan
+                optimizer_D.zero_grad()
+
+            scaler_D.step(optimizer_D)
+            scaler_D.update()
+
+            # TRAIN GENERATOR
+
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
