@@ -1,7 +1,8 @@
 import argparse
-import os
-import numpy as np
+import copy
 import math
+import numpy as np
+import os
 
 import collections
 from collections import deque
@@ -16,15 +17,14 @@ from torchvision.utils import save_image
 
 from generators import generators
 from discriminators import discriminators
-from siren import siren
-from generators import mapping
 import network_config
 
 import datasets
 import curriculums
 from tqdm import tqdm
 from datetime import datetime
-import copy
+from ddp_utils import synchronize
+import fid_evaluation
 
 from torch_ema import ExponentialMovingAverage
 
@@ -41,59 +41,6 @@ def setup_ddp(rank, world_size, port):
 
 def cleanup():
     dist.destroy_process_group()
-
-
-def synchronize():
-    if not dist.is_available():
-        return
-    if not dist.is_initialized():
-        return
-    world_size = dist.get_world_size()
-    if world_size == 1:
-        return
-    dist.barrier()
-
-
-def gen_images(rank,
-               world_size,
-               generator,
-               G_kwargs,
-               fake_dir,
-               num_imgs,
-               img_size,
-               batch_size):
-    if rank == 0:
-        os.makedirs(fake_dir, exist_ok=True)
-    synchronize()
-
-    metadata = copy.deepcopy(G_kwargs)
-
-    batch_gpu = batch_size // world_size
-
-    metadata['img_size'] = img_size
-    metadata['batch_size'] = batch_gpu
-    metadata['psi'] = 1
-
-    generator.eval()
-
-    if rank == 0:
-        pbar = tqdm(desc=f"Generating images at {img_size}x{img_size}", total=num_imgs)
-    with torch.no_grad():
-        for idx_b in range((num_imgs + batch_size - 1) // batch_size):
-            if rank == 0:
-                pbar.update(batch_size)
-
-            zs = generator.get_zs(metadata['batch_size'])
-            generated_imgs = generator(zs, forward_points=256 ** 2, **metadata)[0]
-
-            for idx_i, img in enumerate(generated_imgs):
-                saved_path = f"{fake_dir}/{idx_b * batch_size + idx_i * world_size + rank:0>5}.jpg"
-                save_image(img, saved_path, normalize=True, value_range=(-1, 1))
-
-    if rank == 0:
-        pbar.close()
-    synchronize()
-    pass
 
 
 def build_optimizer(generator_ddp,
@@ -452,19 +399,33 @@ def train(rank,
 
             if opt.eval_freq > 0 and (discriminator.step + 1) % opt.eval_freq == 0:
                 generated_dir = os.path.join(opt.output_dir, 'evaluation/generated')
+                real_dir = os.path.join(opt.output_dir, 'evaluation/real')
 
                 if rank == 0:
-                    fid_evaluation.setup_evaluation(metadata['dataset'], generated_dir,
-                                                    dataset_path=metadata["dataset_path"], target_size=128)
+                    fid_evaluation.setup_evaluation(
+                        rank=rank,
+                        dataset_name=metadata['dataset'],
+                        generated_dir=generated_dir,
+                        real_dir=real_dir,
+                        dataset_path=metadata["dataset_path"],
+                        num_imgs=8000,
+                        target_size=128,
+                    )
                 dist.barrier()
                 ema.store(generator_ddp.parameters())
                 ema.copy_to(generator_ddp.parameters())
                 generator_ddp.eval()
-                fid_evaluation.output_images(generator_ddp, metadata, rank, world_size, generated_dir)
+                fid_evaluation.output_images(
+                    rank=rank,
+                    world_size=world_size,
+                    generator=generator_ddp,
+                    metadata=metadata,
+                    generated_dir=generated_dir,
+                )
                 ema.restore(generator_ddp.parameters())
                 dist.barrier()
                 if rank == 0:
-                    fid = fid_evaluation.calculate_fid(metadata['dataset'], generated_dir, target_size=128)
+                    fid = fid_evaluation.calculate_fid(generated_dir, real_dir)
                     with open(os.path.join(opt.output_dir, f'fid.txt'), 'a') as f:
                         f.write(f'\n{discriminator.step}:{fid}')
 

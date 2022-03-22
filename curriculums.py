@@ -153,4 +153,5 @@ CARLA = {
     'train_aux_img': True,
     'aux_img_interval': 1,
     'd_reg_interval': 1,
+    'batch_size_eval': 16,
 }
