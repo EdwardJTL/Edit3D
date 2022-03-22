@@ -10,19 +10,20 @@ class PixelNorm(nn.Module):
 
     def forward(self, input):
         assert input.dim() == 2
-        return input * torch.rsqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
+        return input * torch.rsqrt(torch.mean(input**2, dim=1, keepdim=True) + 1e-8)
 
 
 class MultiHeadMappingNetwork(nn.Module):
-    def __init__(self,
-                 z_dim,
-                 hidden_dim,
-                 base_layers,
-                 head_layers,
-                 head_dim_dict,
-                 add_norm=False,
-                 norm_out=False
-                 ):
+    def __init__(
+        self,
+        z_dim,
+        hidden_dim,
+        base_layers,
+        head_layers,
+        head_dim_dict,
+        add_norm=False,
+        norm_out=False,
+    ):
         super(MultiHeadMappingNetwork, self).__init__()
 
         self.z_dim = z_dim

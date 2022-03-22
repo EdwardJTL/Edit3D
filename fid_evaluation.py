@@ -23,22 +23,27 @@ def output_real_images(dataloader, num_imgs, real_dir):
     img_counter = 0
     batch_size = dataloader.batch_size
     dataloader = iter(dataloader)
-    for i in range(num_imgs//batch_size):
+    for i in range(num_imgs // batch_size):
         real_imgs, _ = next(dataloader)
 
         for img in real_imgs:
-            save_image(img, os.path.join(real_dir, f'{img_counter:0>5}.jpg'), normalize=True, range=(-1, 1))
+            save_image(
+                img,
+                os.path.join(real_dir, f"{img_counter:0>5}.jpg"),
+                normalize=True,
+                range=(-1, 1),
+            )
             img_counter += 1
 
 
 def setup_evaluation(
-        rank,
-        dataset_name,
-        generated_dir,
-        real_dir,
-        dataset_path,
-        target_size=128,
-        num_imgs=8000,
+    rank,
+    dataset_name,
+    generated_dir,
+    real_dir,
+    dataset_path,
+    target_size=128,
+    num_imgs=8000,
 ):
     if rank == 0:
         os.makedirs(real_dir, exist_ok=True)
@@ -52,10 +57,12 @@ def setup_evaluation(
             os.remove(file)
 
         # then create the images
-        dataloader, CHANNELS = datasets.get_dataset(dataset_name, img_size=target_size, dataset_path=dataset_path)
-        print('outputting real images...')
+        dataloader, CHANNELS = datasets.get_dataset(
+            dataset_name, img_size=target_size, dataset_path=dataset_path
+        )
+        print("outputting real images...")
         output_real_images(dataloader, num_imgs, real_dir)
-        print('...done')
+        print("...done")
 
     if generated_dir is not None:
         os.makedirs(generated_dir, exist_ok=True)
@@ -63,13 +70,13 @@ def setup_evaluation(
 
 
 def output_images(
-        rank,
-        world_size,
-        generator,
-        metadata,
-        generated_dir,
-        img_size=128,
-        num_imgs=2048,
+    rank,
+    world_size,
+    generator,
+    metadata,
+    generated_dir,
+    img_size=128,
+    num_imgs=2048,
 ):
     if rank == 0:
         os.makedirs(generated_dir, exist_ok=True)
@@ -77,17 +84,17 @@ def output_images(
 
     metadata = copy.deepcopy(metadata)
 
-    batch_size = metadata.get('batch_size_eval', metadata['batch_size'])
+    batch_size = metadata.get("batch_size_eval", metadata["batch_size"])
 
-    batch_gpu = metadata['batch_size'] // world_size
+    batch_gpu = metadata["batch_size"] // world_size
 
-    metadata['img_size'] = img_size
-    metadata['batch_size'] = batch_gpu
+    metadata["img_size"] = img_size
+    metadata["batch_size"] = batch_gpu
 
-    metadata['h_stddev'] = metadata.get('h_stddev_eval', metadata['h_stddev'])
-    metadata['v_stddev'] = metadata.get('v_stddev_eval', metadata['v_stddev'])
-    metadata['sample_dist'] = metadata.get('sample_dist_eval', metadata['sample_dist'])
-    metadata['psi'] = 1.
+    metadata["h_stddev"] = metadata.get("h_stddev_eval", metadata["h_stddev"])
+    metadata["v_stddev"] = metadata.get("v_stddev_eval", metadata["v_stddev"])
+    metadata["sample_dist"] = metadata.get("sample_dist_eval", metadata["sample_dist"])
+    metadata["psi"] = 1.0
 
     generator.eval()
 
@@ -98,8 +105,8 @@ def output_images(
             if rank == 0:
                 pbar.update(batch_size)
 
-            zs = generator.get_zs(metadata['batch_size'])
-            generated_imgs = generator(zs, forward_points=256 ** 2, **metadata)[0]
+            zs = generator.get_zs(metadata["batch_size"])
+            generated_imgs = generator(zs, forward_points=256**2, **metadata)[0]
 
             for idx_i, img in enumerate(generated_imgs):
                 saved_path = f"{generated_dir}/{idx_b * batch_size + idx_i * world_size + rank:0>5}.jpg"
@@ -112,7 +119,9 @@ def output_images(
 
 
 def calculate_fid(generated_dir, real_dir):
-    fid = fid_score.calculate_fid_given_paths([real_dir, generated_dir], 128, 'cuda', 2048)
+    fid = fid_score.calculate_fid_given_paths(
+        [real_dir, generated_dir], 128, "cuda", 2048
+    )
     torch.cuda.empty_cache()
 
     return fid

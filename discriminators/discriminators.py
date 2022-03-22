@@ -300,9 +300,9 @@ class Blur(nn.Module):
         kernel = make_kernel(kernel)
 
         if upsample_factor > 1:
-            kernel = kernel * (upsample_factor ** 2)
+            kernel = kernel * (upsample_factor**2)
 
-        self.register_buffer('kernel', kernel)
+        self.register_buffer("kernel", kernel)
 
         self.pad = pad
 
@@ -313,14 +313,14 @@ class Blur(nn.Module):
 
 class EqualConv2d(nn.Module):
     def __init__(
-            self, in_channel, out_channel, kernel_size, stride=1, padding=0, bias=True
+        self, in_channel, out_channel, kernel_size, stride=1, padding=0, bias=True
     ):
         super().__init__()
 
         self.weight = nn.Parameter(
             torch.randn(out_channel, in_channel, kernel_size, kernel_size)
         )
-        self.scale = 1 / math.sqrt(in_channel * kernel_size ** 2)
+        self.scale = 1 / math.sqrt(in_channel * kernel_size**2)
 
         self.stride = stride
         self.padding = padding
@@ -344,14 +344,14 @@ class EqualConv2d(nn.Module):
 
 class EqualConvTranspose2d(nn.Module):
     def __init__(
-            self, in_channel, out_channel, kernel_size, stride=1, padding=0, bias=True
+        self, in_channel, out_channel, kernel_size, stride=1, padding=0, bias=True
     ):
         super().__init__()
 
         self.weight = nn.Parameter(
             torch.randn(in_channel, out_channel, kernel_size, kernel_size)
         )
-        self.scale = 1 / math.sqrt(in_channel * kernel_size ** 2)
+        self.scale = 1 / math.sqrt(in_channel * kernel_size**2)
 
         self.stride = stride
         self.padding = padding
@@ -375,17 +375,18 @@ class EqualConvTranspose2d(nn.Module):
 
 
 class ConvLayer(nn.Sequential):
-    def __init__(self,
-                 in_channel,
-                 out_channel,
-                 kernel_size,
-                 down_sample=False,
-                 blur_kernel=[1, 3, 3, 1],
-                 bias=True,
-                 activate=True,
-                 upsample=False,
-                 padding="zero",
-                 ):
+    def __init__(
+        self,
+        in_channel,
+        out_channel,
+        kernel_size,
+        down_sample=False,
+        blur_kernel=[1, 3, 3, 1],
+        bias=True,
+        activate=True,
+        upsample=False,
+        padding="zero",
+    ):
         layers = collections.OrderedDict()
 
         self.padding = 0
@@ -397,7 +398,7 @@ class ConvLayer(nn.Sequential):
             pad0 = (p + 1) // 2
             pad1 = p // 2
 
-            layers['down_blur'] = Blur(blur_kernel, pad=(pad0, pad1))
+            layers["down_blur"] = Blur(blur_kernel, pad=(pad0, pad1))
 
         if upsample:
             up_conv = EqualConvTranspose2d(
@@ -408,13 +409,13 @@ class ConvLayer(nn.Sequential):
                 stride=2,
                 bias=bias and not activate,
             )
-            layers['up_conv'] = up_conv
+            layers["up_conv"] = up_conv
 
             factor = 2
             p = (len(blur_kernel) - factor) - (kernel_size - 1)
             pad0 = (p + 1) // 2 + factor - 1
             pad1 = p // 2 + 1
-            layers['up_blur'] = Blur(blur_kernel, pad=(pad0, pad1))
+            layers["up_blur"] = Blur(blur_kernel, pad=(pad0, pad1))
         else:
             if not down_sample:
                 if padding == "zero":
@@ -422,7 +423,7 @@ class ConvLayer(nn.Sequential):
                 elif padding == "reflect":
                     padding = (kernel_size - 1) // 2
                     if padding > 0:
-                        layers['pad'] = nn.ReflectionPad2d(padding)
+                        layers["pad"] = nn.ReflectionPad2d(padding)
                     self.padding = 0
                 elif padding != "valid":
                     raise ValueError("padding must be 'zero', 'reflect' or 'valid'")
@@ -435,37 +436,48 @@ class ConvLayer(nn.Sequential):
                 stride=stride,
                 bias=bias and not activate,
             )
-            layers['equal_conv'] = equal_conv
+            layers["equal_conv"] = equal_conv
 
         if activate:
             if bias:
-                layers['flrelu'] = FusedLeakyReLU(out_channel)
+                layers["flrelu"] = FusedLeakyReLU(out_channel)
             else:
-                layers['slrelu'] = ScaledLeakyReLU(0.2)
+                layers["slrelu"] = ScaledLeakyReLU(0.2)
 
         super().__init__(layers)
         return
 
 
 class ResBlock(nn.Module):
-    def __init__(self,
-                 in_channel,
-                 out_channel,
-                 blur_kernel=[1, 3, 3, 1],
-                 kernel_size=3,
-                 down_sample=True,
-                 first_downsample=False):
+    def __init__(
+        self,
+        in_channel,
+        out_channel,
+        blur_kernel=[1, 3, 3, 1],
+        kernel_size=3,
+        down_sample=True,
+        first_downsample=False,
+    ):
         super().__init__()
 
         if first_downsample:
-            self.conv1 = ConvLayer(in_channel, in_channel, kernel_size, down_sample=down_sample)
+            self.conv1 = ConvLayer(
+                in_channel, in_channel, kernel_size, down_sample=down_sample
+            )
             self.conv2 = ConvLayer(in_channel, out_channel, kernel_size)
         else:
             self.conv1 = ConvLayer(in_channel, in_channel, kernel_size)
-            self.conv2 = ConvLayer(in_channel, out_channel, kernel_size, down_sample=down_sample)
+            self.conv2 = ConvLayer(
+                in_channel, out_channel, kernel_size, down_sample=down_sample
+            )
 
         self.skip = ConvLayer(
-            in_channel, out_channel, 1, down_sample=down_sample, activate=False, bias=False
+            in_channel,
+            out_channel,
+            1,
+            down_sample=down_sample,
+            activate=False,
+            bias=False,
         )
 
     def forward(self, input):
@@ -480,7 +492,7 @@ class ResBlock(nn.Module):
 
 class EqualLinear(nn.Module):
     def __init__(
-            self, in_dim, out_dim, bias=True, bias_init=0, lr_mul=1, activation=None
+        self, in_dim, out_dim, bias=True, bias_init=0, lr_mul=1, activation=None
     ):
         super().__init__()
 
@@ -511,16 +523,17 @@ class EqualLinear(nn.Module):
 
 
 class MultiScaleDiscriminator(nn.Module):
-    def __init__(self,
-                 diffaug,
-                 max_size,
-                 channel_multiplier=2,
-                 blur_kernel=[1, 3, 3, 1],
-                 input_size=3,
-                 first_downsample=False,
-                 channels=None,
-                 stddev_group=4
-                 ):
+    def __init__(
+        self,
+        diffaug,
+        max_size,
+        channel_multiplier=2,
+        blur_kernel=[1, 3, 3, 1],
+        input_size=3,
+        first_downsample=False,
+        channels=None,
+        stddev_group=4,
+    ):
         super().__init__()
         self.epoch = 0
         self.step = 0
@@ -552,7 +565,9 @@ class MultiScaleDiscriminator(nn.Module):
         in_channel = channels[max_size]
         for i in range(log_size, 2, -1):
             out_channel = channels[2 ** (i - 1)]
-            self.convs[f"{2 ** i}"] = ResBlock(in_channel, out_channel, blur_kernel, first_downsample=first_downsample)
+            self.convs[f"{2 ** i}"] = ResBlock(
+                in_channel, out_channel, blur_kernel, first_downsample=first_downsample
+            )
             in_channel = out_channel
 
         self.stddev_feat = 1
@@ -562,21 +577,24 @@ class MultiScaleDiscriminator(nn.Module):
         else:
             self.final_conv = ConvLayer(in_channel, channels[4], 3)
 
-        self.space_linear = EqualLinear(channels[4] * 4 * 4, channels[4], activation='fused_lrelu')
+        self.space_linear = EqualLinear(
+            channels[4] * 4 * 4, channels[4], activation="fused_lrelu"
+        )
 
         self.out_linear = EqualLinear(channels[4], 1)
 
         return
 
     def diff_aug_img(self, img):
-        img = DiffAugment(img, policy='color,translation,cutout')
+        img = DiffAugment(img, policy="color,translation,cutout")
         return img
 
-    def forward(self,
-                input,
-                alpha,
-                summary_ddict=None,
-                ):
+    def forward(
+        self,
+        input,
+        alpha,
+        summary_ddict=None,
+    ):
         if self.diffaug:
             input = self.diff_aug_img(input)
 
@@ -587,7 +605,7 @@ class MultiScaleDiscriminator(nn.Module):
         cur_size_out = self.convs[f"{2 ** log_size}"](cur_size_out)
 
         if alpha < 1:
-            down_input = F.interpolate(input, scale_factor=0.5, mode='bilinear')
+            down_input = F.interpolate(input, scale_factor=0.5, mode="bilinear")
             down_size_out = self.conv_in[f"{2 ** (log_size - 1)}"](down_input)
             out = alpha * cur_size_out + (1 - alpha) * down_size_out
         else:
@@ -601,7 +619,9 @@ class MultiScaleDiscriminator(nn.Module):
         if self.stddev_group > 0:
             group = min(batch, self.stddev_group)
             # (4, 2, 1, 512//1, 4, 4)
-            stddev = out.view(group, -1, self.stddev_feat, channel // self.stddev_feat, height, width)
+            stddev = out.view(
+                group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
+            )
             # (2, 1, 512//1, 4, 4)
             stddev = torch.sqrt(stddev.var(0, unbiased=False) + 1e-8)
             # (2, 1, 1, 1)
@@ -620,8 +640,8 @@ class MultiScaleDiscriminator(nn.Module):
             with torch.no_grad():
                 logits_norm = out.norm(dim=1).mean().item()
                 w_norm = self.out_linear.weight.norm(dim=1).mean().item()
-                summary_ddict['logits_norm']['logits_norm'] = logits_norm
-                summary_ddict['w_norm']['w_norm'] = w_norm
+                summary_ddict["logits_norm"]["logits_norm"] = logits_norm
+                summary_ddict["w_norm"]["w_norm"] = w_norm
 
         out = self.out_linear(out)
 
@@ -630,13 +650,14 @@ class MultiScaleDiscriminator(nn.Module):
 
 
 class MultiScaleAuxDiscriminator(nn.Module):
-    def __init__(self,
-                 diffaug,
-                 max_size,
-                 channel_multiplier=2,
-                 first_downsample=False,
-                 stddev_group=0
-                 ):
+    def __init__(
+        self,
+        diffaug,
+        max_size,
+        channel_multiplier=2,
+        first_downsample=False,
+        stddev_group=0,
+    ):
         super().__init__()
         self.epoch = 0
         self.step = 0
@@ -646,7 +667,7 @@ class MultiScaleAuxDiscriminator(nn.Module):
             max_size=max_size,
             channel_multiplier=channel_multiplier,
             first_downsample=first_downsample,
-            stddev_group=stddev_group
+            stddev_group=stddev_group,
         )
 
         # Auxiliary Discriminator
@@ -668,25 +689,26 @@ class MultiScaleAuxDiscriminator(nn.Module):
             channel_multiplier=channel_multiplier,
             first_downsample=True,
             channels=channels,
-            stddev_group=stddev_group
+            stddev_group=stddev_group,
         )
 
         return
 
-    def forward(self,
-                input,
-                use_aux_disc=False,
-                summary_ddict=None,
-                alpha=1.,
-                **kwargs):
+    def forward(
+        self, input, use_aux_disc=False, summary_ddict=None, alpha=1.0, **kwargs
+    ):
         if use_aux_disc:
             b = input.shape[0] // 2
             main_input = input[:b]
             aux_input = input[b:]
-            main_out, latent, position = self.main_disc(main_input, alpha, summary_ddict=summary_ddict)
+            main_out, latent, position = self.main_disc(
+                main_input, alpha, summary_ddict=summary_ddict
+            )
             aux_out, _, _ = self.aux_disc(aux_input, alpha)
             out = torch.cat([main_out, aux_out], dim=0)
         else:
-            out, latent, position = self.main_disc(input, alpha, summary_ddict=summary_ddict)
+            out, latent, position = self.main_disc(
+                input, alpha, summary_ddict=summary_ddict
+            )
 
         return out, latent, position

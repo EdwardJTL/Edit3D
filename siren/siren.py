@@ -95,9 +95,7 @@ def frequency_init(freq):
 
 
 class LinearScale(nn.Module):
-    def __init__(self,
-                 scale,
-                 bias):
+    def __init__(self, scale, bias):
         super(LinearScale, self).__init__()
         self.scale_v = scale
         self.bias_v = bias
@@ -121,13 +119,9 @@ class FiLMLayer(nn.Module):
 
 
 class StyleFiLMLayer(nn.Module):
-    def __init__(self,
-                 in_dim,
-                 out_dim,
-                 style_dim,
-                 use_style_fc=True,
-                 which_linear=nn.Linear
-                 ):
+    def __init__(
+        self, in_dim, out_dim, style_dim, use_style_fc=True, which_linear=nn.Linear
+    ):
         super().__init__()
 
         self.in_dim = in_dim
@@ -473,15 +467,16 @@ class ShallowSIRENWithPosEmb(nn.Module):
 
 
 class ShallownSIREN(nn.Module):
-    def __init__(self,
-                 in_dim=3,
-                 hidden_dim=256,
-                 hidden_layers=2,
-                 style_dim=512,
-                 rgb_dim=3,
-                 device=None,
-                 name_prefix='nerf',
-                 ):
+    def __init__(
+        self,
+        in_dim=3,
+        hidden_dim=256,
+        hidden_layers=2,
+        style_dim=512,
+        rgb_dim=3,
+        device=None,
+        name_prefix="nerf",
+    ):
         super(ShallownSIREN, self).__init__()
 
         self.device = device
@@ -501,7 +496,9 @@ class ShallownSIREN(nn.Module):
             _in_dim = _out_dim
             _out_dim = hidden_dim
 
-            _layer = StyleFiLMLayer(in_dim=_in_dim, out_dim=_out_dim, style_dim=style_dim, use_style_fc=True)
+            _layer = StyleFiLMLayer(
+                in_dim=_in_dim, out_dim=_out_dim, style_dim=style_dim, use_style_fc=True
+            )
 
             self.network.append(_layer)
             self.style_dim_dict[f"{self.name_prefix}_network_{idx}"] = _layer.style_dim
@@ -510,7 +507,9 @@ class ShallownSIREN(nn.Module):
 
         _in_dim = hidden_dim
         _out_dim = hidden_dim // 2
-        self.color_layer_sine = StyleFiLMLayer(in_dim=_in_dim, out_dim=_out_dim, style_dim=style_dim, use_style_fc=True)
+        self.color_layer_sine = StyleFiLMLayer(
+            in_dim=_in_dim, out_dim=_out_dim, style_dim=style_dim, use_style_fc=True
+        )
         self.style_dim_dict[f"{self.name_prefix}_rgb"] = self.color_layer_sine.style_dim
 
         self.color_layer_linear = nn.Sequential(
@@ -524,11 +523,7 @@ class ShallownSIREN(nn.Module):
         # Shouldn't affect performance.
         self.grid_warper = UniformBoxWarp(0.24)
 
-    def forward(self,
-                x,
-                style_dict,
-                ray_directions
-                ):
+    def forward(self, x, style_dict, ray_directions):
         out = self.forward_with_frequencies_phase_shifts(
             input=input,
             style_dict=style_dict,
@@ -537,11 +532,12 @@ class ShallownSIREN(nn.Module):
 
         return out
 
-    def forward_with_frequencies_phase_shifts(self,
-                                              x,
-                                              style_dict,
-                                              ray_directions,
-                                              ):
+    def forward_with_frequencies_phase_shifts(
+        self,
+        x,
+        style_dict,
+        ray_directions,
+    ):
         """
 
         :param input: (b, n, 3)
@@ -575,13 +571,14 @@ class ShallownSIREN(nn.Module):
         frequencies = frequencies * 15 + 30
         return frequencies, phase_shifts
 
-    def staged_forward(self,
-                       transformed_points,
-                       transformed_ray_directions_expanded,
-                       style_dict,
-                       max_points,
-                       num_steps,
-                       ):
+    def staged_forward(
+        self,
+        transformed_points,
+        transformed_ray_directions_expanded,
+        style_dict,
+        max_points,
+        num_steps,
+    ):
         batch_size, num_points, _ = transformed_points.shape
 
         rgb_sigma_output = torch.zeros(
@@ -593,14 +590,20 @@ class ShallownSIREN(nn.Module):
             head = 0
             while head < num_points:
                 tail = head + max_points
-                rgb_sigma_output[b:b+1, head:tail] = self(
-                    input=transformed_points[b:b+1, head:tail],
-                    style_dict={name: style[b:b + 1] for name, style in style_dict.items()},
-                    ray_directions=transformed_ray_directions_expanded[b:b + 1, head:tail]
+                rgb_sigma_output[b : b + 1, head:tail] = self(
+                    input=transformed_points[b : b + 1, head:tail],
+                    style_dict={
+                        name: style[b : b + 1] for name, style in style_dict.items()
+                    },
+                    ray_directions=transformed_ray_directions_expanded[
+                        b : b + 1, head:tail
+                    ],
                 )
                 head += max_points
 
-        rgb_sigma_output = rearrange(rgb_sigma_output, "b (hw s) rgb_sigma -> b hw s rgb_sigma", s=num_steps)
+        rgb_sigma_output = rearrange(
+            rgb_sigma_output, "b (hw s) rgb_sigma -> b hw s rgb_sigma", s=num_steps
+        )
         return rgb_sigma_output
 
 

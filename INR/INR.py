@@ -21,24 +21,29 @@ def kaiming_leaky_init(m):
     :return:
     """
     if isinstance(m, nn.Linear):
-        torch.nn.init.kaiming_normal_(m.weight, a=0.2, mode='fan_in', nonlinearity='leaky_relu')
+        torch.nn.init.kaiming_normal_(
+            m.weight, a=0.2, mode="fan_in", nonlinearity="leaky_relu"
+        )
 
 
 class SkipLayer(nn.Module):
-    def __init__(self, ):
+    def __init__(
+        self,
+    ):
         super(SkipLayer, self).__init__()
 
     def forward(self, x0, x1):
-        out = (x0 + x1)
+        out = x0 + x1
         return out
 
 
 class LinearBlock(nn.Module):
-    def __init__(self,
-                 in_dim,
-                 out_dim,
-                 name_prefix,
-                 ):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        name_prefix,
+    ):
         super().__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
@@ -54,16 +59,15 @@ class LinearBlock(nn.Module):
 
         pass
 
-    def forward(self,
-                x,
-                *args,
-                **kwargs):
+    def forward(self, x, *args, **kwargs):
         out = self.net(x)
         return out
 
 
 class SinAct(nn.Module):
-    def __init__(self, ):
+    def __init__(
+        self,
+    ):
         super(SinAct, self).__init__()
 
     def forward(self, x):
@@ -72,16 +76,16 @@ class SinAct(nn.Module):
 
 class SinStyleMod(nn.Module):
     def __init__(
-            self,
-            in_channel,
-            out_channel,
-            kernel_size=1,
-            style_dim=None,
-            use_style_fc=False,
-            demodulate=True,
-            use_group_conv=False,
-            eps=1e-8,
-        ):
+        self,
+        in_channel,
+        out_channel,
+        kernel_size=1,
+        style_dim=None,
+        use_style_fc=False,
+        demodulate=True,
+        use_group_conv=False,
+        eps=1e-8,
+    ):
         """
 
         :param in_channel:
@@ -105,12 +109,18 @@ class SinStyleMod(nn.Module):
         self.padding = kernel_size // 2
 
         if use_group_conv:
-            self.weight = nn.Parameter(torch.randn(1, out_channel, in_channel, kernel_size, kernel_size))
-            torch.nn.init.kaiming_normal_(self.weight[0], a=0.2, mode='fan_in', nonlinearity='leaky_relu')
+            self.weight = nn.Parameter(
+                torch.randn(1, out_channel, in_channel, kernel_size, kernel_size)
+            )
+            torch.nn.init.kaiming_normal_(
+                self.weight[0], a=0.2, mode="fan_in", nonlinearity="leaky_relu"
+            )
         else:
             assert kernel_size == 1
             self.weight = nn.Parameter(torch.randn(1, in_channel, out_channel))
-            torch.nn.init.kaiming_normal_(self.weight[0], a=0.2, mode='fan_in', nonlinearity='leaky_relu')
+            torch.nn.init.kaiming_normal_(
+                self.weight[0], a=0.2, mode="fan_in", nonlinearity="leaky_relu"
+            )
 
         if use_style_fc:
             self.modulation = nn.Linear(style_dim, in_channel)
@@ -123,11 +133,7 @@ class SinStyleMod(nn.Module):
 
         return
 
-    def forward_bmm(self,
-                    x,
-                    style,
-                    weight
-                    ):
+    def forward_bmm(self, x, style, weight):
         """
 
         :param x: (b, in_c, h, w), (b, in_c), (b, n, in_c)
@@ -148,14 +154,23 @@ class SinStyleMod(nn.Module):
             style = self.modulation(style)
             style = style.view(-1, in_channel, 1)
         else:
-            style = rearrange(style, 'b c -> b c 1')
+            style = rearrange(style, "b c -> b c 1")
 
         # (1, in, out) * (b in 1) -> (b, in, out)
         weight = weight * (style + 1)
 
         if self.demodulate:
-            demod = torch.rsqrt(weight.pow(2).sum([1, ]) + self.eps)  # (b, out)
-            weight = weight * demod.view(batch, 1, self.out_channel)  # (b, in, out) * (b, 1, out) -> (b, in, out)
+            demod = torch.rsqrt(
+                weight.pow(2).sum(
+                    [
+                        1,
+                    ]
+                )
+                + self.eps
+            )  # (b, out)
+            weight = weight * demod.view(
+                batch, 1, self.out_channel
+            )  # (b, in, out) * (b, 1, out) -> (b, in, out)
         # (b, n, in) * (b, in, out) -> (b, n, out)
         out = torch.bmm(input, weight)
 
@@ -165,9 +180,7 @@ class SinStyleMod(nn.Module):
             pass
         return out
 
-    def forward_group_conv(self,
-                           x,
-                           style):
+    def forward_group_conv(self, x, style):
         """
 
         :param x: (b, in_c, h, w), (b, in_c), (b, n, in_c)
@@ -188,16 +201,20 @@ class SinStyleMod(nn.Module):
 
         if self.use_style_fc:
             style = self.modulation(style).view(-1, 1, in_channel, 1, 1)
-            style = style + 1.
+            style = style + 1.0
         else:
-            style = rearrange(style, 'b c -> b 1 c 1 1')
+            style = rearrange(style, "b c -> b 1 c 1 1")
         # (1, out, in, ks, ks) * (b, 1, in, 1, 1) -> (b, out, in, ks, ks)
         weight = self.weight * style
         if self.demodulate:
             demod = torch.rsqrt(weight.pow(2).sum([2, 3, 4]) + self.eps)  # (b, out)
-            weight = weight * demod.view(batch, self.out_channel, 1, 1, 1)  # (b, out, in, ks, ks) * (b, out, 1, 1, 1)
+            weight = weight * demod.view(
+                batch, self.out_channel, 1, 1, 1
+            )  # (b, out, in, ks, ks) * (b, out, 1, 1, 1)
         # (b*out, in, ks, ks)
-        weight = weight.view(batch * self.out_channel, in_channel, self.kernel_size, self.kernel_size)
+        weight = weight.view(
+            batch * self.out_channel, in_channel, self.kernel_size, self.kernel_size
+        )
         # (1, b*in, h, w)
         input = input.reshape(1, batch * in_channel, height, width)
         out = F.conv2d(input, weight, padding=self.padding, groups=batch)
@@ -211,10 +228,7 @@ class SinStyleMod(nn.Module):
 
         return out
 
-    def forward(self,
-                x,
-                style,
-                force_bmm=False):
+    def forward(self, x, style, force_bmm=False):
         """
 
         :param input: (b, in_c, h, w), (b, in_c), (b, n, in_c)
@@ -233,12 +247,13 @@ class SinStyleMod(nn.Module):
 
 
 class SinBlock(nn.Module):
-    def __init__(self,
-                 in_dim,
-                 out_dim,
-                 style_dim,
-                 name_prefix,
-                 ):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        style_dim,
+        name_prefix,
+    ):
         super().__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
@@ -247,36 +262,35 @@ class SinBlock(nn.Module):
 
         self.style_dim_dict = {}
 
-        self.mod1 = SinStyleMod(in_channel=in_dim,
-                                out_channel=out_dim,
-                                style_dim=style_dim,
-                                use_style_fc=True,
-                                )
-        self.style_dim_dict[f'{name_prefix}_0'] = self.mod1.style_dim
+        self.mod1 = SinStyleMod(
+            in_channel=in_dim,
+            out_channel=out_dim,
+            style_dim=style_dim,
+            use_style_fc=True,
+        )
+        self.style_dim_dict[f"{name_prefix}_0"] = self.mod1.style_dim
         self.act1 = nn.LeakyReLU(0.2, inplace=True)
 
-        self.mod2 = SinStyleMod(in_channel=out_dim,
-                                out_channel=out_dim,
-                                style_dim=style_dim,
-                                use_style_fc=True,
-                                )
-        self.style_dim_dict[f'{name_prefix}_1'] = self.mod2.style_dim
+        self.mod2 = SinStyleMod(
+            in_channel=out_dim,
+            out_channel=out_dim,
+            style_dim=style_dim,
+            use_style_fc=True,
+        )
+        self.style_dim_dict[f"{name_prefix}_1"] = self.mod2.style_dim
         self.act2 = nn.LeakyReLU(0.2, inplace=True)
 
         self.skip = SkipLayer()
         pass
 
-    def forward(self,
-                x,
-                style_dict,
-                skip=False):
+    def forward(self, x, style_dict, skip=False):
         x_orig = x
 
-        style = style_dict[f'{self.name_prefix}_0']
+        style = style_dict[f"{self.name_prefix}_0"]
         x = self.mod1(x, style)
         x = self.act1(x)
 
-        style = style_dict[f'{self.name_prefix}_1']
+        style = style_dict[f"{self.name_prefix}_1"]
         x = self.mod2(x, style)
         out = self.act2(x)
 
@@ -351,15 +365,16 @@ class INRNetwork(nn.Module):
 
 
 class EqualLinear(nn.Module):
-    def __init__(self,
-                 in_dim,
-                 out_dim,
-                 bias=True,
-                 bias_init=0,
-                 lr_mul=1.,
-                 scale=None,
-                 norm_weight=False,
-                 ):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        bias=True,
+        bias_init=0,
+        lr_mul=1.0,
+        scale=None,
+        norm_weight=False,
+    ):
         """
 
         :param in_dim:
@@ -386,15 +401,22 @@ class EqualLinear(nn.Module):
 
         return
 
-    def forward(self,
-                input):
+    def forward(self, input):
         """
 
         :param input: (b c), (b, n, c)
         :return:
         """
         if self.norm_weight:
-            demod = torch.rsqrt(self.weight.pow(2).sum([1, ], keepdim=True) + 1e-8)
+            demod = torch.rsqrt(
+                self.weight.pow(2).sum(
+                    [
+                        1,
+                    ],
+                    keepdim=True,
+                )
+                + 1e-8
+            )
             weight = self.weight * demod
         else:
             weight = self.weight
@@ -403,23 +425,18 @@ class EqualLinear(nn.Module):
 
 
 class ToRGB(nn.Module):
-    def __init__(self,
-                 in_dim,
-                 dim_rgb=3,
-                 use_equal_fc=False):
+    def __init__(self, in_dim, dim_rgb=3, use_equal_fc=False):
         super().__init__()
         self.in_dim = in_dim
         self.dim_rgb = dim_rgb
 
         if use_equal_fc:
-            self.linear = EqualLinear(in_dim, dim_rgb, scale=1.)
+            self.linear = EqualLinear(in_dim, dim_rgb, scale=1.0)
         else:
             self.linear = nn.Linear(in_dim, dim_rgb)
         pass
 
-    def forward(self,
-                input,
-                skip=None):
+    def forward(self, input, skip=None):
 
         out = self.linear(input)
 
@@ -429,14 +446,15 @@ class ToRGB(nn.Module):
 
 
 class CIPSNet(nn.Module):
-    def __init__(self,
-                 input_dim,
-                 style_dim,
-                 hidden_dim=256,
-                 pre_rgb_dim=32,
-                 device=None,
-                 name_prefix='inr',
-                 ):
+    def __init__(
+        self,
+        input_dim,
+        style_dim,
+        hidden_dim=256,
+        pre_rgb_dim=32,
+        device=None,
+        name_prefix="inr",
+    ):
         """
 
         :param input_dim:
@@ -474,7 +492,7 @@ class CIPSNet(nn.Module):
             _in_dim = _out_dim
             _out_dim = channel
 
-            if name.startswith(('none', )):
+            if name.startswith(("none",)):
                 _linear_block = LinearBlock(
                     in_dim=_in_dim,
                     out_dim=_out_dim,
@@ -509,11 +527,12 @@ class CIPSNet(nn.Module):
         self.tanh = nn.Sequential(*out_layers)
         self.tanh.apply(frequency_init(100))
 
-    def forward(self,
-                x,
-                style_dict,
-                img_size=1024,
-                ):
+    def forward(
+        self,
+        x,
+        style_dict,
+        img_size=1024,
+    ):
         """
         :return:
         - out: (b, num_points, 4), rgb(3) + sigma(1)
@@ -535,5 +554,3 @@ class CIPSNet(nn.Module):
 
         rgb = self.tanh(rgb)
         return rgb
-
-
