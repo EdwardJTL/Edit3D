@@ -43,6 +43,59 @@ def cleanup():
     dist.destroy_process_group()
 
 
+def synchronize():
+    if not dist.is_available():
+        return
+    if not dist.is_initialized():
+        return
+    world_size = dist.get_world_size()
+    if world_size == 1:
+        return
+    dist.barrier()
+
+
+def gen_images(rank,
+               world_size,
+               generator,
+               G_kwargs,
+               fake_dir,
+               num_imgs,
+               img_size,
+               batch_size):
+    if rank == 0:
+        os.makedirs(fake_dir, exist_ok=True)
+    synchronize()
+
+    metadata = copy.deepcopy(G_kwargs)
+
+    batch_gpu = batch_size // world_size
+
+    metadata['img_size'] = img_size
+    metadata['batch_size'] = batch_gpu
+    metadata['psi'] = 1
+
+    generator.eval()
+
+    if rank == 0:
+        pbar = tqdm(desc=f"Generating images at {img_size}x{img_size}", total=num_imgs)
+    with torch.no_grad():
+        for idx_b in range((num_imgs + batch_size - 1) // batch_size):
+            if rank == 0:
+                pbar.update(batch_size)
+
+            zs = generator.get_zs(metadata['batch_size'])
+            generated_imgs = generator(zs, forward_points=256 ** 2, **metadata)[0]
+
+            for idx_i, img in enumerate(generated_imgs):
+                saved_path = f"{fake_dir}/{idx_b * batch_size + idx_i * world_size + rank:0>5}.jpg"
+                save_image(img, saved_path, normalize=True, value_range=(-1, 1))
+
+    if rank == 0:
+        pbar.close()
+    synchronize()
+    pass
+
+
 def build_optimizer(generator_ddp,
                     discriminator_ddp,
                     metadata):
@@ -132,6 +185,9 @@ def train(rank,
 
     summary_ddict = collections.defaultdict(dict)
 
+    generator_losses = []
+    discriminator_losses = []
+
     for _ in range(opt.n_epochs):
         total_progress_bar.update(1)
 
@@ -177,6 +233,11 @@ def train(rank,
 
             if dataloader.batch_size != metadata['batch_size']:
                 break
+
+            if scaler_G.get_scale() < 1:
+                scaler_G.update(1.)
+            if scaler_D.get_scale() < 1:
+                scaler_D.update(1.)
 
             generator_ddp.train()
             discriminator_ddp.train()
@@ -274,6 +335,8 @@ def train(rank,
                         summary_ddict['D_logits']['D_logits_fake'] = g_preds.mean().item()
                         summary_ddict['grad_penalty']['grad_penalty'] = grad_penalty.mean().item()
 
+                discriminator_losses.append(d_loss.item())
+
             optimizer_D.zero_grad()
             scaler_D.scale(d_loss).backward()
             scaler_D.unscale_(optimizer_D)
@@ -292,8 +355,130 @@ def train(rank,
             scaler_D.update()
 
             # TRAIN GENERATOR
+            zs_list = generator.get_zs(imgs.shape[0], batch_split=metadata['batch_split'])
+            if metadata['batch_split'] == 1:
+                zs_list = [zs_list]
 
+            if metadata['grad_points'] is not None:
+                grad_points = metadata['grad_points'] ** 2
+            else:
+                grad_points = None
 
+            for subset_z in zs_list:
+                with torch.cuda.amp.autocast(metadata['use_amp_G']):
+                    gen_imgs, gen_positions = generator_ddp(
+                        subset_z,
+                        img_size=metadata['img_size'],
+                        nerf_noise=metadata['nerf_noise'],
+                        return_aux_img=aux_reg,
+                        grad_points=grad_points,
+                        forward_points=None,
+                        fov=metadata['fov'],
+                        ray_start=metadata['ray_start'],
+                        ray_end=metadata['ray_end'],
+                        num_steps=metadata['num_steps'],
+                        h_stddev=metadata['h_stddev'],
+                        v_stddev=metadata['v_stddev'],
+                        hierarchical_sample=metadata['hierarchical_sample'],
+                        psi=1,
+                        sample_distance=metadata['z_dist'],
+                    )
+                    with torch.cuda.amp.autocast(metadata['use_amp_D']):
+                        g_preds, _, _ = discriminator_ddp(gen_imgs.to(torch.float32), alpha=alpha, use_aux_disc=aux_reg)
+                    g_loss = torch.nn.functional.softplus(-g_preds).mean()
+                    generator_losses.append(g_loss.item())
+                scaler_G.scale(g_loss).backward()
+            # end accumulate gradients
+            scaler_G.unscale_(optimizer_G)
+            try:
+                G_total_norm = torch.nn.utils.clip_grad_norm_(
+                    generator_ddp.parameters(),
+                    metadata['grad_clip'],
+                )
+                summary_ddict['G_total_norm']['G_total_norm'] = G_total_norm.item()
+            except:
+                summary_ddict['G_total_norm']['G_total_norm'] = np.nan
+                optimizer_G.zero_grad()
+            scaler_G.step(optimizer_G)
+            scaler_G.update()
+            optimizer_G.zero_grad()
+
+            # update ema
+            ema.update(generator_ddp.parameters())
+            ema2.update(generator_ddp.parameters())
+
+            if rank == 0:
+                interior_step_bar.update(1)
+                if i % 10 == 0:
+                    tqdm.write(
+                        f"[Experiment: {opt.output_dir}] [GPU: {os.environ['CUDA_VISIBLE_DEVICES']}] [Epoch: {discriminator.epoch}/{opt.n_epochs}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}] [Step: {discriminator.step}] [Alpha: {alpha:.2f}] [Img Size: {metadata['img_size']}] [Batch Size: {metadata['batch_size']}] [TopK: {topk_num}] [Scale: {scaler.get_scale()}]")
+
+                if discriminator.step % opt.sample_interval == 0:
+                    generator_ddp.eval()
+                    gen_images(
+                        rank=rank,
+                        world_size=world_size,
+                        generator=ema,
+                        G_kwargs={
+                            'fov': metadata['fov'],
+                            'ray_start': metadata['ray_start'],
+                            'ray_end': metadata['ray_end'],
+                            'num_steps': metadata['num_steps'],
+                            'h_stddev': metadata['h_stddev'],
+                            'v_stddev': metadata['v_stddev'],
+                            'hierarchical_sample': metadata['hierarchical_sample'],
+                            'psi': 1,
+                            'sample_distance': metadata['z_dist'],
+                        },
+                        fake_dir=os.path.join(opt.output_dir, 'evaluation/generated'),
+                        num_imgs=2048,
+                        img_size=metadata['img_size'],
+                        batch_size=metadata['batch_size'],
+                    )
+
+                    synchronize()
+
+                if discriminator.step % opt.sample_interval == 0:
+                    torch.save(ema.state_dict(), os.path.join(opt.output_dir, 'ema.pth'))
+                    torch.save(ema2.state_dict(), os.path.join(opt.output_dir, 'ema2.pth'))
+                    torch.save(generator_ddp.module, os.path.join(opt.output_dir, 'generator.pth'))
+                    torch.save(discriminator_ddp.module, os.path.join(opt.output_dir, 'discriminator.pth'))
+                    torch.save(optimizer_G.state_dict(), os.path.join(opt.output_dir, 'optimizer_G.pth'))
+                    torch.save(optimizer_D.state_dict(), os.path.join(opt.output_dir, 'optimizer_D.pth'))
+                    torch.save(scaler_G.state_dict(), os.path.join(opt.output_dir, 'scaler_G.pth'))
+                    torch.save(scaler_D.state_dict(), os.path.join(opt.output_dir, 'scaler_D.pth'))
+                    torch.save(generator_losses, os.path.join(opt.output_dir, 'generator.losses'))
+                    torch.save(discriminator_losses, os.path.join(opt.output_dir, 'discriminator.losses'))
+
+            if opt.eval_freq > 0 and (discriminator.step + 1) % opt.eval_freq == 0:
+                generated_dir = os.path.join(opt.output_dir, 'evaluation/generated')
+
+                if rank == 0:
+                    fid_evaluation.setup_evaluation(metadata['dataset'], generated_dir,
+                                                    dataset_path=metadata["dataset_path"], target_size=128)
+                dist.barrier()
+                ema.store(generator_ddp.parameters())
+                ema.copy_to(generator_ddp.parameters())
+                generator_ddp.eval()
+                fid_evaluation.output_images(generator_ddp, metadata, rank, world_size, generated_dir)
+                ema.restore(generator_ddp.parameters())
+                dist.barrier()
+                if rank == 0:
+                    fid = fid_evaluation.calculate_fid(metadata['dataset'], generated_dir, target_size=128)
+                    with open(os.path.join(opt.output_dir, f'fid.txt'), 'a') as f:
+                        f.write(f'\n{discriminator.step}:{fid}')
+
+                torch.cuda.empty_cache()
+
+            discriminator.step += 1
+            generator.step += 1
+
+            synchronize()
+        discriminator.epoch += 1
+        generator.epoch += 1
+
+    cleanup()
+    return
 
 
 if __name__ == '__main__':
