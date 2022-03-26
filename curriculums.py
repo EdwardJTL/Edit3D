@@ -94,7 +94,7 @@ def extract_metadata(curriculum, current_step):
     return return_dict
 
 
-CARLA = {
+LSUN = {
     0: {
         "batch_size": 10,
         "num_steps": 12,
@@ -114,10 +114,10 @@ CARLA = {
     int(500e3): {},
     # int(55e3): {'batch_size': 1, 'num_steps': 48, 'img_size': 128, 'batch_split': 5, 'gen_lr': 10e-6, 'disc_lr': 10e-5},
     # int(200e3): {},
-    "dataset_path": "/h/edwardl/datasets/carla/images/*.png",
+    "dataset_path": "/h/edwardl/datasets/LSUN/cars/combined/*.webp",
     "fov": 30,
-    "ray_start": 0.88,
-    "ray_end": 1.12,
+    "ray_start": 0.7,
+    "ray_end": 1.3,
     "fade_steps": 10000,
     "sample_dist": "spherical_uniform",
     "h_stddev": math.pi,

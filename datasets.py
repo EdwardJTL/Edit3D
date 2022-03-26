@@ -134,8 +134,8 @@ class ShapeNetCars(Dataset):
         return X, 0
 
 
-class StyleGANCars(Dataset):
-    """StyleGAN Cars Dataset"""
+class LSUNCars(Dataset):
+    """LSUN Cars Dataset"""
 
     def __init__(self, dataset_path, img_size, **kwargs):
         super().__init__()
@@ -146,7 +146,7 @@ class StyleGANCars(Dataset):
         ), "Can't find data; make sure you specify the path to your dataset"
         self.transform = transforms.Compose(
             [
-                transforms.CenterCrop(384),
+                transforms.CenterCrop(400),
                 transforms.Resize(
                     (img_size, img_size),
                     interpolation=torchvision.transforms.InterpolationMode.BILINEAR,
