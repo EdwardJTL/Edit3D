@@ -105,5 +105,5 @@ class MultiScaleAuxDiscriminatorConfig(NetworkConfig):
         }
         super().__init__(config, MultiScaleAuxDiscriminator)
 
-    def build_model(self, inr_model):
+    def build_model(self):
         return self.constructor(**self.config)

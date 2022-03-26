@@ -134,7 +134,7 @@ LSUN = {
     "grad_clip": 10,
     "model": "TALLSIREN",
     "generator": "CIPSGeneratorNerfINR",
-    "discriminator": "MultiScaleAuxDiscriminator",
+    "discriminator": "MultiScaleAuxDiscriminatorConfig",
     "INR": "CIPSNetINRConfig",
     "siren": "ShallowSIRENConfig",
     "inr_mapping": "INRMultiHeadMappingConfig",

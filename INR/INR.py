@@ -518,7 +518,7 @@ class CIPSNet(nn.Module):
 
         self.network = nn.ModuleDict(network)
         self.to_rbgs = nn.ModuleDict(to_rbgs)
-        self.to_rgbs.apply(frequency_init(100))
+        self.to_rbgs.apply(frequency_init(100))
 
         out_layers = []
         if pre_rgb_dim > 3:

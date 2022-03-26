@@ -87,7 +87,7 @@ def build_optimizer(generator_ddp, discriminator_ddp, metadata):
 def train(rank, world_size, opt):
     torch.manual_seed(0)
 
-    setup_ddp(rank, world_size, opt)
+    setup_ddp(rank, world_size, opt.port)
     device = torch.device(rank)
 
     curriculum = getattr(curriculums, opt.curriculum)
@@ -97,18 +97,18 @@ def train(rank, world_size, opt):
     scaler_D = torch.cuda.amp.GradScaler(enabled=metadata["use_amp_D"])
 
     # Initialize the model
-    inr_model = getattr(network_config, metadata["inr_model"]).build_model().to(device)
+    inr_model = getattr(network_config, metadata["INR"])().build_model().to(device)
     siren_model = (
-        getattr(network_config, metadata["siren_model"]).build_model().to(device)
+        getattr(network_config, metadata["siren"])().build_model().to(device)
     )
     inr_mapping = (
-        getattr(network_config, metadata["inr_mapping"])
-        .build_model(inr_model.style_dim_dict)
+        getattr(network_config, metadata["inr_mapping"])()
+        .build_model(inr_model)
         .to(device)
     )
     siren_mapping = (
-        getattr(network_config, metadata["siren_mapping"])
-        .build_model(siren_model.style_dim_dict)
+        getattr(network_config, metadata["siren_mapping"])()
+        .build_model(siren_model)
         .to(device)
     )
     generator = getattr(generators, metadata["generator"])(
@@ -119,7 +119,9 @@ def train(rank, world_size, opt):
         mapping_network_inr=inr_mapping,
     ).to(device)
     discriminator = (
-        getattr(discriminators, metadata["discriminator"]).build_model().to(device)
+        getattr(network_config, metadata["discriminator"])()
+        .build_model()
+        .to(device)
     )
 
     # ema
@@ -573,7 +575,7 @@ if __name__ == "__main__":
         help="interval between image sampling",
     )
     parser.add_argument("--output_dir", type=str, default="debug")
-    parser.add_argument("--load_dir", type=str, default="")
+    parser.add_argument('--checkpoint_dir', type=str)
     parser.add_argument("--curriculum", type=str, required=True)
     parser.add_argument("--eval_freq", type=int, default=5000)
     parser.add_argument("--port", type=str, default="12355")
