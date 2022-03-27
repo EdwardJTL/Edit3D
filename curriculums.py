@@ -132,7 +132,6 @@ LSUN = {
     "r1_lambda": 10,
     "latent_dim": 256,
     "grad_clip": 10,
-    "model": "TALLSIREN",
     "generator": "CIPSGeneratorNerfINR",
     "discriminator": "MultiScaleAuxDiscriminatorConfig",
     "INR": "CIPSNetINRConfig",
@@ -154,4 +153,5 @@ LSUN = {
     "aux_img_interval": 1,
     "d_reg_interval": 1,
     "batch_size_eval": 16,
+    "grad_points": 256,
 }

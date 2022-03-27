@@ -246,8 +246,8 @@ def train(rank, world_size, opt):
             if scaler_D.get_scale() < 1:
                 scaler_D.update(1.0)
 
-            generator_ddp.train()
-            discriminator_ddp.train()
+            generator_ddp.train().half()
+            discriminator_ddp.train().half()
 
             alpha = min(
                 1, (discriminator.step - step_last_upsample) / (metadata["fade_steps"])
@@ -309,6 +309,8 @@ def train(rank, world_size, opt):
                         else:
                             gen_imgs.append(g_imgs)
                             gen_positions.append(g_pos)
+                    gen_imgs = torch.cat(gen_imgs + gen_imgs_aux, axis=0)
+                    gen_positions = torch.cat(gen_positions + gen_positions_aux, axis=0)
                 # end of no grad
                 if aux_reg:
                     real_imgs = torch.cat([real_imgs, real_imgs], dim=0)
@@ -416,7 +418,7 @@ def train(rank, world_size, opt):
                         v_stddev=metadata["v_stddev"],
                         hierarchical_sample=metadata["hierarchical_sample"],
                         psi=1,
-                        sample_distance=metadata["z_dist"],
+                        sample_dist=metadata["z_dist"],
                     )
                     with torch.cuda.amp.autocast(metadata["use_amp_D"]):
                         g_preds, _, _ = discriminator_ddp(
