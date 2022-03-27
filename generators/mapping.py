@@ -87,6 +87,8 @@ class MultiHeadMappingNetwork(nn.Module):
                 head_net = nn.Sequential(*head_net)
             else:
                 head_net = nn.Identity()
+                
+            self.add_module(name, head_net)
 
         return
 

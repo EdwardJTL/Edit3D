@@ -297,7 +297,7 @@ def train(rank, world_size, opt):
                             v_stddev=metadata["v_stddev"],
                             hierarchical_sample=metadata["hierarchical_sample"],
                             psi=1,
-                            sample_distance=metadata["z_dist"],
+                            sample_dist=metadata["z_dist"],
                         )
                         if metadata["batch_split"] > 1:
                             Gz, Gz_aux = g_imgs.chunk(metadata["batch_split"])

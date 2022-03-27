@@ -523,7 +523,7 @@ class ShallownSIREN(nn.Module):
         # Shouldn't affect performance.
         self.grid_warper = UniformBoxWarp(0.24)
 
-    def forward(self, x, style_dict, ray_directions):
+    def forward(self, input, style_dict, ray_directions):
         out = self.forward_with_frequencies_phase_shifts(
             input=input,
             style_dict=style_dict,
@@ -534,7 +534,7 @@ class ShallownSIREN(nn.Module):
 
     def forward_with_frequencies_phase_shifts(
         self,
-        x,
+        input,
         style_dict,
         ray_directions,
     ):
@@ -547,7 +547,7 @@ class ShallownSIREN(nn.Module):
         :return:
         """
 
-        x = self.grid_warper(x)
+        x = self.grid_warper(input)
 
         for index, layer in enumerate(self.network):
             style = style_dict[f"{self.name_prefix}_network_{index}"]

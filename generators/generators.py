@@ -1800,6 +1800,61 @@ class CIPSGeneratorNerfINR(nn.Module):
             }
             return zs
 
+    @torch.no_grad()
+    def get_fine_points_and_direction(
+        self,
+        coarse_output,
+        z_vals,
+        dim_rgb,
+        clamp_mode,
+        nerf_noise,
+        num_steps,
+        transformed_ray_origins,
+        transformed_ray_directions,
+    ):
+        """
+        :param coarse_output: (b, h x w, num_samples, rgb_sigma)
+        :param z_vals: (b, h x w, num_samples, 1)
+        :param clamp_mode:
+        :param nerf_noise:
+        :param num_steps:
+        :param transformed_ray_origins: (b, h x w, 3)
+        :param transformed_ray_directions: (b, h x w, 3)
+        :return:
+        - fine_points: (b, h x w x num_steps, 3)
+        - fine_z_vals: (b, h x w, num_steps, 1)
+        """
+
+        batch_size = coarse_output.shape[0]
+
+        _, _, weights = fancy_integration(
+            rgb_sigma=coarse_output,
+            z_vals=z_vals,
+            device=self.device,
+            dim_rgb=dim_rgb,
+            clamp_mode=clamp_mode,
+            noise_std=nerf_noise,
+        )
+
+        weights = rearrange(weights, "b hw s 1 -> (b hw) s") + 1e-5
+
+        #### Start new importance sampling
+        z_vals = rearrange(z_vals, "b hw s 1 -> (b hw) s")
+        z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])
+        fine_z_vals = sample_pdf(
+            bins=z_vals_mid, weights=weights[:, 1:-1], N_importance=num_steps, det=False
+        ).detach()
+        fine_z_vals = rearrange(fine_z_vals, "(b hw) s -> b hw s 1", b=batch_size)
+
+        fine_points = (
+            transformed_ray_origins.unsqueeze(2).contiguous()
+            + transformed_ray_directions.unsqueeze(2).contiguous()
+            * fine_z_vals.expand(-1, -1, -1, 3).contiguous()
+        )
+        fine_points = rearrange(fine_points, "b hw s c -> b (hw s) c")
+
+        return fine_points, fine_z_vals
+
     def generate_avg_frequencies(self, num_samples=10000, device="cuda"):
 
         """Calculates average frequencies and phase shifts"""
@@ -1965,7 +2020,7 @@ class CIPSGeneratorNerfINR(nn.Module):
         device = self.device
         batch_size = list(style_dict.values())[0].shape[0]
 
-        if forward_points is None:
+        if forward_points is not None:
             # stage forward
             with torch.no_grad():
                 num_points = img_size**2
@@ -2111,12 +2166,12 @@ class CIPSGeneratorNerfINR(nn.Module):
                 return_aux_img=return_aux_img,
             )
 
-        inr_img = rearrange(inr_img, "b (h w) s c -> b c h w", h=img_size)
+        inr_img = rearrange(inr_img, "b (h w) c -> b c h w", h=img_size)
         inr_img = self.filters(inr_img)
         pitch_yaw = torch.cat([pitch, yaw], -1)
 
         if return_aux_img:
-            aux_img = rearrange(aux_img, "b (h w) s c -> b c h w", h=img_size)
+            aux_img = rearrange(aux_img, "b (h w) c -> b c h w", h=img_size)
 
             imgs = torch.cat([inr_img, aux_img])
             pitch_yaw = torch.cat([pitch_yaw, pitch_yaw])
@@ -2328,9 +2383,9 @@ class CIPSGeneratorNerfINR(nn.Module):
         # Resample fine points
         if hierarchical_sample:
             fine_points, fine_z_vals = self.get_fine_points_and_direction(
-                coarse_points=coarse_output,
+                coarse_output=coarse_output,
                 z_vals=z_vals,
-                dim_rgb=self.siren.dim_rgb,
+                dim_rgb=self.siren.rgb_dim,
                 num_steps=num_steps,
                 clamp_mode=clamp_mode,
                 nerf_noise=nerf_noise,
@@ -2345,7 +2400,7 @@ class CIPSGeneratorNerfINR(nn.Module):
                 ray_directions=transformed_ray_directions_expanded,
             )
             fine_output = rearrange(
-                fine_output, "b n s rgb_sigma -> b (n s) rgb_sigma", s=num_steps
+                fine_output, "b (n s) rgb_sigma -> b n s rgb_sigma", s=num_steps
             )
 
             # Combine coarse and fine points
@@ -2368,7 +2423,7 @@ class CIPSGeneratorNerfINR(nn.Module):
             rgb_sigma=all_outputs,
             z_vals=all_z_vals,
             device=device,
-            dim_rgb=self.siren.dim_rgb,
+            dim_rgb=self.siren.rgb_dim,
             white_back=white_back,
             last_back=last_back,
             clamp_mode=clamp_mode,
