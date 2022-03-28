@@ -246,8 +246,8 @@ def train(rank, world_size, opt):
             if scaler_D.get_scale() < 1:
                 scaler_D.update(1.0)
 
-            generator_ddp.train().half()
-            discriminator_ddp.train().half()
+            generator_ddp.train()
+            discriminator_ddp.train()
 
             alpha = min(
                 1, (discriminator.step - step_last_upsample) / (metadata["fade_steps"])
@@ -262,7 +262,7 @@ def train(rank, world_size, opt):
             )
 
             # TRAIN DISCRIMINATOR
-            with torch.cuda.amp.autocast():
+            with torch.cuda.amp.autocast(enabled=metadata["use_amp_D"]):
                 # Generate images for discriminator training
                 with torch.no_grad():
                     zs_list = generator.get_zs(
