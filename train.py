@@ -474,7 +474,7 @@ def train(rank, world_size, opt):
                             "v_stddev": copied_metadata["v_stddev"],
                             "hierarchical_sample": copied_metadata["hierarchical_sample"],
                             "psi": 1,
-                            "sample_distance": copied_metadata["z_dist"],
+                            "sample_dist": copied_metadata["z_dist"],
                         },
                         output_dir=opt.output_dir,
                         img_name=f"{discriminator.step}",

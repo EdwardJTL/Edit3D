@@ -1751,6 +1751,9 @@ class CIPSGeneratorNerfINR(nn.Module):
 
         self.filters = nn.Identity()
 
+        self.epoch = 0
+        self.step = 0
+
         return
 
     def mapping_network(self, z_nerf, z_inr):
