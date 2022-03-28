@@ -125,8 +125,8 @@ def train(rank, world_size, opt):
     )
 
     # ema
-    # ema = ExponentialMovingAverage(generator, decay=0.999)
-    # ema2 = ExponentialMovingAverage(generator, decay=0.9999)
+    ema = ExponentialMovingAverage(generator.parameters(), decay=0.999)
+    ema2 = ExponentialMovingAverage(generator.parameters(), decay=0.9999)
 
     # ddp
     generator_ddp = DDP(generator, device_ids=[rank], find_unused_parameters=True)
@@ -212,12 +212,12 @@ def train(rank, world_size, opt):
             if discriminator.step % opt.model_save_interval == 0 and rank == 0:
                 now = datetime.now()
                 now = now.strftime("%d--%H:%M--")
-                # torch.save(
-                #     ema.state_dict(), os.path.join(opt.output_dir, now + "ema.pth")
-                # )
-                # torch.save(
-                #     ema2.state_dict(), os.path.join(opt.output_dir, now + "ema2.pth")
-                # )
+                torch.save(
+                    ema.state_dict(), os.path.join(opt.output_dir, now + "ema.pth")
+                )
+                torch.save(
+                    ema2.state_dict(), os.path.join(opt.output_dir, now + "ema2.pth")
+                )
                 torch.save(
                     generator_ddp.module,
                     os.path.join(opt.output_dir, now + "generator.pth"),
@@ -411,8 +411,8 @@ def train(rank, world_size, opt):
             optimizer_G.zero_grad()
 
             # update ema
-            # ema.update(generator_ddp.parameters())
-            # ema2.update(generator_ddp.parameters())
+            ema.update(generator_ddp.parameters())
+            ema2.update(generator_ddp.parameters())
 
             if rank == 0:
                 interior_step_bar.update(1)
@@ -447,12 +447,12 @@ def train(rank, world_size, opt):
                     )
 
                 if discriminator.step % opt.sample_interval == 0:
-                    # torch.save(
-                    #     ema.state_dict(), os.path.join(opt.output_dir, "ema.pth")
-                    # )
-                    # torch.save(
-                    #     ema2.state_dict(), os.path.join(opt.output_dir, "ema2.pth")
-                    # )
+                    torch.save(
+                        ema.state_dict(), os.path.join(opt.output_dir, "ema.pth")
+                    )
+                    torch.save(
+                        ema2.state_dict(), os.path.join(opt.output_dir, "ema2.pth")
+                    )
                     torch.save(
                         generator_ddp.module,
                         os.path.join(opt.output_dir, "generator.pth"),
@@ -501,8 +501,8 @@ def train(rank, world_size, opt):
                         target_size=128,
                     )
                 dist.barrier()
-                # ema.store(generator_ddp.parameters())
-                # ema.copy_to(generator_ddp.parameters())
+                ema.store(generator_ddp.parameters())
+                ema.copy_to(generator_ddp.parameters())
                 generator_ddp.eval()
                 fid_evaluation.output_images(
                     rank=rank,
@@ -511,7 +511,7 @@ def train(rank, world_size, opt):
                     metadata=metadata,
                     generated_dir=generated_dir,
                 )
-                # ema.restore(generator_ddp.parameters())
+                ema.restore(generator_ddp.parameters())
                 dist.barrier()
                 if rank == 0:
                     fid = fid_evaluation.calculate_fid(generated_dir, real_dir)

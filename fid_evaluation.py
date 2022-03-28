@@ -105,8 +105,24 @@ def output_images(
             if rank == 0:
                 pbar.update(batch_size)
 
-            zs = generator.get_zs(metadata["batch_size"])
-            generated_imgs = generator(zs, forward_points=256**2, **metadata)[0]
+            zs = generator.module.get_zs(metadata["batch_size"])
+            generated_imgs = generator.module.forward(
+                zs, 
+                img_size=metadata["img_size"],
+                nerf_noise=metadata["nerf_noise"],
+                return_aux_img=False,
+                grad_points=None,
+                forward_points=256**2,
+                fov=metadata["fov"],
+                ray_start=metadata["ray_start"],
+                ray_end=metadata["ray_end"],
+                num_steps=metadata["num_steps"],
+                h_stddev=metadata["h_stddev"],
+                v_stddev=metadata["v_stddev"],
+                hierarchical_sample=metadata["hierarchical_sample"],
+                psi=metadata["psi"],
+                sample_dist=metadata["z_dist"],
+            )[0]
 
             for idx_i, img in enumerate(generated_imgs):
                 saved_path = f"{generated_dir}/{idx_b * batch_size + idx_i * world_size + rank:0>5}.jpg"
