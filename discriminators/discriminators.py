@@ -592,8 +592,7 @@ class MultiScaleDiscriminator(nn.Module):
     def forward(
         self,
         input,
-        alpha,
-        summary_ddict=None,
+        alpha
     ):
         if self.diffaug:
             input = self.diff_aug_img(input)
@@ -635,13 +634,6 @@ class MultiScaleDiscriminator(nn.Module):
         out = out.view(batch, -1)
 
         out = self.space_linear(out)
-
-        if summary_ddict is not None:
-            with torch.no_grad():
-                logits_norm = out.norm(dim=1).mean().item()
-                w_norm = self.out_linear.weight.norm(dim=1).mean().item()
-                summary_ddict["logits_norm"]["logits_norm"] = logits_norm
-                summary_ddict["w_norm"]["w_norm"] = w_norm
 
         out = self.out_linear(out)
 
@@ -695,20 +687,20 @@ class MultiScaleAuxDiscriminator(nn.Module):
         return
 
     def forward(
-        self, input, use_aux_disc=False, summary_ddict=None, alpha=1.0, **kwargs
+        self, input, use_aux_disc=False, alpha=1.0, **kwargs
     ):
         if use_aux_disc:
             b = input.shape[0] // 2
             main_input = input[:b]
             aux_input = input[b:]
             main_out, latent, position = self.main_disc(
-                main_input, alpha, summary_ddict=summary_ddict
+                main_input, alpha
             )
             aux_out, _, _ = self.aux_disc(aux_input, alpha)
             out = torch.cat([main_out, aux_out], dim=0)
         else:
             out, latent, position = self.main_disc(
-                input, alpha, summary_ddict=summary_ddict
+                input, alpha
             )
 
         return out, latent, position

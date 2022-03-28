@@ -169,8 +169,6 @@ def train(rank, world_size, opt):
     total_progress_bar.update(discriminator.epoch)
     interior_step_bar = tqdm(dynamic_ncols=True)
 
-    summary_ddict = collections.defaultdict(dict)
-
     generator_losses = []
     discriminator_losses = []
 
@@ -318,8 +316,7 @@ def train(rank, world_size, opt):
                 r_preds, _, _ = discriminator_ddp(
                     real_imgs,
                     alpha=alpha,
-                    use_aux_disc=aux_reg,
-                    summary_ddict=summary_ddict,
+                    use_aux_disc=aux_reg
                 )
 
             d_regularize = discriminator.step & metadata["d_reg_interval"] == 0
@@ -358,33 +355,11 @@ def train(rank, world_size, opt):
                     + grad_penalty
                 ).mean()
 
-                if rank == 0:
-                    with torch.no_grad():
-                        summary_ddict["D_logits"][
-                            "D_logits_real"
-                        ] = r_preds.mean().item()
-                        summary_ddict["D_logits"][
-                            "D_logits_fake"
-                        ] = g_preds.mean().item()
-                        summary_ddict["grad_penalty"][
-                            "grad_penalty"
-                        ] = grad_penalty.mean().item()
-
                 discriminator_losses.append(d_loss.item())
 
             optimizer_D.zero_grad()
             scaler_D.scale(d_loss).backward()
             scaler_D.unscale_(optimizer_D)
-
-            try:
-                D_total_norm = torch.nn.utils.clip_grad_norm_(
-                    discriminator_ddp.parameters(),
-                    metadata["grad_clip"],
-                )
-                summary_ddict["D_total_norm"]["D_total_norm"] = D_total_norm.item()
-            except:
-                summary_ddict["D_total_norm"]["D_total_norm"] = np.nan
-                optimizer_D.zero_grad()
 
             scaler_D.step(optimizer_D)
             scaler_D.update()
@@ -431,15 +406,6 @@ def train(rank, world_size, opt):
                 scaler_G.scale(g_loss).backward()
             # end accumulate gradients
             scaler_G.unscale_(optimizer_G)
-            try:
-                G_total_norm = torch.nn.utils.clip_grad_norm_(
-                    generator_ddp.parameters(),
-                    metadata["grad_clip"],
-                )
-                summary_ddict["G_total_norm"]["G_total_norm"] = G_total_norm.item()
-            except:
-                summary_ddict["G_total_norm"]["G_total_norm"] = np.nan
-                optimizer_G.zero_grad()
             scaler_G.step(optimizer_G)
             scaler_G.update()
             optimizer_G.zero_grad()
