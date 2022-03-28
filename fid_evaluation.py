@@ -50,7 +50,8 @@ def setup_evaluation(
     synchronize()
 
     # if a directory exists but the images are not right, remove them
-    existing_files = [name for name in os.listdir(real_dir) if os.path.isfile(name)]
+    real_dir_contents = [os.path.join(real_dir, name) for name in os.listdir(real_dir)]
+    existing_files = [name for name in real_dir_contents if os.path.isfile(name)]
     if len(existing_files) != num_imgs:
         print("Removing {} files".format(len(existing_files)))
         for file in existing_files:

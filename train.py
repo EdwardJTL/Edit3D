@@ -487,8 +487,8 @@ def train(rank, world_size, opt):
                     )
 
             if opt.eval_freq > 0 and (discriminator.step + 1) % opt.eval_freq == 0:
-                generated_dir = os.path.join(opt.output_dir, "evaluation/generated")
-                real_dir = os.path.join(opt.output_dir, "evaluation/real")
+                generated_dir = os.path.join(opt.output_dir, "evaluation", "generated")
+                real_dir = os.path.join(opt.output_dir, "evaluation", "real")
 
                 if rank == 0:
                     fid_evaluation.setup_evaluation(
