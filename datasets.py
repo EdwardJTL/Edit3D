@@ -146,11 +146,11 @@ class LSUNCars(Dataset):
         ), "Can't find data; make sure you specify the path to your dataset"
         self.transform = transforms.Compose(
             [
-                transforms.CenterCrop(400),
                 transforms.Resize(
-                    (img_size, img_size),
+                    img_size,
                     interpolation=torchvision.transforms.InterpolationMode.BILINEAR,
                 ),
+                transforms.CenterCrop(img_size),
                 transforms.ToTensor(),
                 transforms.Normalize([0.5], [0.5]),
             ]
