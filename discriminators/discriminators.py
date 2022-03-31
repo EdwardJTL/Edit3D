@@ -7,7 +7,7 @@ import curriculums
 import torch.nn.functional as F
 
 from upfirdn2dLib.upfirdn2d import upfirdn2d
-from fused_act.fused_act import FusedLeakyReLU, fused_leaky_relu
+from fused_actLib.fused_act import FusedLeakyReLU, fused_leaky_relu
 
 from .sgdiscriminators import *
 from .diffaug import DiffAugment

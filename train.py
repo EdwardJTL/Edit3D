@@ -518,6 +518,7 @@ def train(rank, world_size, opt):
                     with open(os.path.join(opt.output_dir, f"fid.txt"), "a") as f:
                         f.write(f"\n{discriminator.step}:{fid}")
 
+                print("torch empty cache")
                 torch.cuda.empty_cache()
 
             discriminator.step += 1

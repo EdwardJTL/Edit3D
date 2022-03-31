@@ -139,6 +139,7 @@ def calculate_fid(generated_dir, real_dir):
     fid = fid_score.calculate_fid_given_paths(
         [real_dir, generated_dir], 128, "cuda", 2048
     )
+    print("calculate_fid torch empty cache")
     torch.cuda.empty_cache()
 
     return fid

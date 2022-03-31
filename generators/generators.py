@@ -1787,8 +1787,13 @@ class CIPSGeneratorNerfINR(nn.Module):
 
         if batch_split > 1:
             zs_list = []
+            print("get_zs debug")
+            print(b)
+            print(batch_split)
+            print(b // batch_split)
             z_nerf_list = z_nerf.split(b // batch_split)
             z_inr_list = z_inr.split(b // batch_split)
+            print("after split")
             for z_nerf_, z_inr_ in zip(z_nerf_list, z_inr_list):
                 zs_ = {
                     "z_nerf": z_nerf_,

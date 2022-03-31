@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.utils.cpp_extension import load
 
 module_path = os.path.dirname(__file__)
+print("Load upfirdn2d_op")
 upfirdn2d_op = load(
     "upfirdn2d",
     sources=[
