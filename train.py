@@ -2,8 +2,10 @@ import argparse
 import copy
 import math
 import numpy as np
+import re
 import os
 
+import itertools
 import collections
 from collections import deque
 
@@ -84,6 +86,51 @@ def build_optimizer(generator_ddp, discriminator_ddp, metadata):
     return optimizer_G, optimizer_D
 
 
+def find_saved_states(opt, use_scaler_D=True, use_scaler_G=True):
+    files = ['generator.pth', 'discriminator.pth', 'ema.pth', 'ema2.pth', 'optimizer_G.pth', 'optimizer_D.pth']
+    if use_scaler_D:
+        files.append('scaler_D.pth')
+    if use_scaler_G:
+        files.append('scaler_G.pth')
+    timestamp_re = "\d+--\d+:\d+--"
+
+    def is_state_file(file):
+        for f in files:
+            if file.endswith(f):
+                return True
+        return False
+
+    def get_time(file):
+        try:
+            return re.search(timestamp_re, file).group(0)
+        except AttributeError:
+            # when output dir is the same as checkpoint dir, the timestamp is not found
+            return "output"
+
+    if os.path.exists(opt.checkpoint_dir):
+        saved_states = os.listdir(opt.checkpoint_dir)
+        saved_states = [f for f in saved_states if is_state_file(f)]
+        if len(saved_states) > 0:
+            saved_states.sort(key=lambda f: os.path.getctime(os.path.join(opt.checkpoint_dir, f)), reverse=True)
+            grouped_saved_states = itertools.groupby(saved_states, key=get_time)
+            for time, group in grouped_saved_states:
+                group = list(group)
+                states = {key: next((os.path.join(opt.checkpoint_dir, f) for f in group if key in f), None) for key in files}
+                if all(states.values()):
+                    return states
+
+    # if no saved states are found in checkpoint_dir, look in output_dir
+    if os.path.exists(opt.output_dir):
+        saved_states = os.listdir(opt.output_dir)
+        saved_states = [f for f in saved_states if f in files]
+        states = {key: next((os.path.join(opt.output_dir, f) for f in saved_states if key in f), None) for key in files}
+        if all(states.values()):
+            return states
+
+    # if no saved states are found in either output_dir or checkpoint_dir, return None
+    return None
+
+
 def train(rank, world_size, opt):
     torch.manual_seed(0)
 
@@ -96,37 +143,52 @@ def train(rank, world_size, opt):
     scaler_G = torch.cuda.amp.GradScaler(enabled=metadata["use_amp_G"])
     scaler_D = torch.cuda.amp.GradScaler(enabled=metadata["use_amp_D"])
 
-    # Initialize the model
-    inr_model = getattr(network_config, metadata["INR"])().build_model().to(device)
-    siren_model = (
-        getattr(network_config, metadata["siren"])().build_model().to(device)
+    # get checkpoint files
+    checkpoint_files = find_saved_states(
+        opt,
+        use_scaler_G=metadata["use_amp_G"],
+        use_scaler_D=metadata["use_amp_D"]
     )
-    inr_mapping = (
-        getattr(network_config, metadata["inr_mapping"])()
-        .build_model(inr_model)
-        .to(device)
-    )
-    siren_mapping = (
-        getattr(network_config, metadata["siren_mapping"])()
-        .build_model(siren_model)
-        .to(device)
-    )
-    generator = getattr(generators, metadata["generator"])(
-        z_dim=metadata["latent_dim"],
-        siren_model=siren_model,
-        inr=inr_model,
-        mapping_network_nerf=siren_mapping,
-        mapping_network_inr=inr_mapping,
-    ).to(device)
-    discriminator = (
-        getattr(network_config, metadata["discriminator"])()
-        .build_model()
-        .to(device)
-    )
+
+    if checkpoint_files is not None:
+        generator = torch.load(checkpoint_files["generator.pth"], map_location=device)
+        discriminator = torch.load(checkpoint_files["discriminator.pth"], map_location=device)
+    else:
+        # Initialize the model
+        inr_model = getattr(network_config, metadata["INR"])().build_model().to(device)
+        siren_model = (
+            getattr(network_config, metadata["siren"])().build_model().to(device)
+        )
+        inr_mapping = (
+            getattr(network_config, metadata["inr_mapping"])()
+            .build_model(inr_model)
+            .to(device)
+        )
+        siren_mapping = (
+            getattr(network_config, metadata["siren_mapping"])()
+            .build_model(siren_model)
+            .to(device)
+        )
+        generator = getattr(generators, metadata["generator"])(
+            z_dim=metadata["latent_dim"],
+            siren_model=siren_model,
+            inr=inr_model,
+            mapping_network_nerf=siren_mapping,
+            mapping_network_inr=inr_mapping,
+        ).to(device)
+        discriminator = (
+            getattr(network_config, metadata["discriminator"])()
+            .build_model()
+            .to(device)
+        )
 
     # ema
     ema = ExponentialMovingAverage(generator.parameters(), decay=0.999)
     ema2 = ExponentialMovingAverage(generator.parameters(), decay=0.9999)
+
+    if checkpoint_files is not None:
+        ema.load_state_dict(torch.load(checkpoint_files["ema.pth"], map_location=device))
+        ema2.load_state_dict(torch.load(checkpoint_files["ema2.pth"], map_location=device))
 
     # ddp
     generator_ddp = DDP(generator, device_ids=[rank], find_unused_parameters=True)
@@ -144,6 +206,14 @@ def train(rank, world_size, opt):
         generator_ddp, discriminator_ddp, metadata
     )
 
+    if checkpoint_files is not None:
+        optimizer_G.load_state_dict(torch.load(checkpoint_files["optimizer_G.pth"], map_location=device))
+        optimizer_D.load_state_dict(torch.load(checkpoint_files["optimizer_D.pth"], map_location=device))
+        if metadata["use_amp_G"]:
+            scaler_G.load_state_dict(torch.load(checkpoint_files["scaler_G.pth"], map_location=device))
+        if metadata["use_amp_D"]:
+            scaler_D.load_state_dict(torch.load(checkpoint_files["scaler_D.pth"], map_location=device))
+
     state_dict = {
         "cur_fid": np.inf,
         "best_fid": np.inf,
@@ -156,9 +226,6 @@ def train(rank, world_size, opt):
         "discriminator": discriminator_ddp.module,
         "state_dict": state_dict,
     }
-
-    # load checkpoint
-    # todo: load checkpoint
 
     # training
     torch.manual_seed(rank)
@@ -233,6 +300,14 @@ def train(rank, world_size, opt):
                 torch.save(
                     optimizer_D.state_dict(),
                     os.path.join(opt.output_dir, now + "optimizer_D.pth"),
+                )
+                torch.save(
+                    scaler_G.state_dict(),
+                    os.path.join(opt.output_dir, "scaler_G.pth"),
+                )
+                torch.save(
+                    scaler_D.state_dict(),
+                    os.path.join(opt.output_dir, "scaler_D.pth"),
                 )
             metadata = curriculums.extract_metadata(curriculum, discriminator.step)
 
