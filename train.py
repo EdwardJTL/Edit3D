@@ -242,7 +242,10 @@ def train(rank, world_size, opt):
     generator_losses = []
     discriminator_losses = []
 
-    fixed_zs = generator.get_zs(b=25)
+    fixed_zs = generator.get_zs(
+        b=25,
+        dist=metadata['z_dist'],
+    )
 
     for _ in range(opt.n_epochs):
         total_progress_bar.update(1)
@@ -342,7 +345,9 @@ def train(rank, world_size, opt):
                 # Generate images for discriminator training
                 with torch.no_grad():
                     zs_list = generator.get_zs(
-                        real_imgs.shape[0], batch_split=metadata["batch_split"]
+                        real_imgs.shape[0],
+                        batch_split=metadata["batch_split"],
+                        dist=metadata["z_dist"],
                     )
                     if metadata["batch_split"] == 1:
                         zs_list = [zs_list]
@@ -373,7 +378,7 @@ def train(rank, world_size, opt):
                             v_stddev=metadata["v_stddev"],
                             hierarchical_sample=metadata["hierarchical_sample"],
                             psi=1,
-                            sample_dist=metadata["z_dist"],
+                            sample_dist=metadata["sample_dist"],
                         )
                         if metadata["batch_split"] > 1:
                             Gz, Gz_aux = g_imgs.chunk(metadata["batch_split"])
@@ -444,7 +449,9 @@ def train(rank, world_size, opt):
 
             # TRAIN GENERATOR
             zs_list = generator.get_zs(
-                imgs.shape[0], batch_split=metadata["batch_split"]
+                imgs.shape[0],
+                batch_split=metadata["batch_split"],
+                dist=metadata["z_dist"],
             )
             if metadata["batch_split"] == 1:
                 zs_list = [zs_list]
@@ -471,7 +478,7 @@ def train(rank, world_size, opt):
                         v_stddev=metadata["v_stddev"],
                         hierarchical_sample=metadata["hierarchical_sample"],
                         psi=1,
-                        sample_dist=metadata["z_dist"],
+                        sample_dist=metadata["sample_dist"],
                     )
                     with torch.cuda.amp.autocast(metadata["use_amp_D"]):
                         g_preds, _, _ = discriminator_ddp(

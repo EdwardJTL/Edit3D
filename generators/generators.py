@@ -1768,21 +1768,24 @@ class CIPSGeneratorNerfINR(nn.Module):
         device,
         dist="gaussian",
     ):
-
         if dist == "gaussian":
             z = torch.randn(shape, device=device)
         elif dist == "uniform":
             z = torch.rand(shape, device=device) * 2 - 1
+        else:
+            raise ValueError("Invalid distribution")
         return z
 
-    def get_zs(self, b, batch_split=1):
+    def get_zs(self, b, batch_split=1, dist="gaussian"):
         z_nerf = self.z_sampler(
             shape=(b, self.mapping_network_nerf.z_dim),
             device=self.device,
+            dist=dist,
         )
         z_inr = self.z_sampler(
             shape=(b, self.mapping_network_inr.z_dim),
             device=self.device,
+            dist=dist,
         )
 
         if batch_split > 1:
