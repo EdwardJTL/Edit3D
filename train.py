@@ -149,6 +149,9 @@ def train(rank, world_size, opt):
         use_scaler_G=metadata["use_amp_G"],
         use_scaler_D=metadata["use_amp_D"]
     )
+    if checkpoint_files is not None:
+        print("Using checkpoint files")
+        print(checkpoint_files)
 
     if checkpoint_files is not None:
         generator = torch.load(checkpoint_files["generator.pth"], map_location=device)
@@ -280,34 +283,34 @@ def train(rank, world_size, opt):
                 now = datetime.now()
                 now = now.strftime("%d--%H:%M--")
                 torch.save(
-                    ema.state_dict(), os.path.join(opt.output_dir, now + "ema.pth")
+                    ema.state_dict(), os.path.join(opt.checkpoint_dir, now + "ema.pth")
                 )
                 torch.save(
-                    ema2.state_dict(), os.path.join(opt.output_dir, now + "ema2.pth")
+                    ema2.state_dict(), os.path.join(opt.checkpoint_dir, now + "ema2.pth")
                 )
                 torch.save(
                     generator_ddp.module,
-                    os.path.join(opt.output_dir, now + "generator.pth"),
+                    os.path.join(opt.checkpoint_dir, now + "generator.pth"),
                 )
                 torch.save(
                     discriminator_ddp.module,
-                    os.path.join(opt.output_dir, now + "discriminator.pth"),
+                    os.path.join(opt.checkpoint_dir, now + "discriminator.pth"),
                 )
                 torch.save(
                     optimizer_G.state_dict(),
-                    os.path.join(opt.output_dir, now + "optimizer_G.pth"),
+                    os.path.join(opt.checkpoint_dir, now + "optimizer_G.pth"),
                 )
                 torch.save(
                     optimizer_D.state_dict(),
-                    os.path.join(opt.output_dir, now + "optimizer_D.pth"),
+                    os.path.join(opt.checkpoint_dir, now + "optimizer_D.pth"),
                 )
                 torch.save(
                     scaler_G.state_dict(),
-                    os.path.join(opt.output_dir, "scaler_G.pth"),
+                    os.path.join(opt.checkpoint_dir, "scaler_G.pth"),
                 )
                 torch.save(
                     scaler_D.state_dict(),
-                    os.path.join(opt.output_dir, "scaler_D.pth"),
+                    os.path.join(opt.checkpoint_dir, "scaler_D.pth"),
                 )
             metadata = curriculums.extract_metadata(curriculum, discriminator.step)
 
