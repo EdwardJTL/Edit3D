@@ -506,30 +506,58 @@ def train(rank, world_size, opt):
                         f"[Experiment: {opt.output_dir}] [GPU: {os.environ['CUDA_VISIBLE_DEVICES']}] [Epoch: {discriminator.epoch}/{opt.n_epochs}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}] [Step: {discriminator.step}] [Alpha: {alpha:.2f}] [Img Size: {metadata['img_size']}] [Batch Size: {metadata['batch_size']}] [Scale: {scaler_G.get_scale()}, {scaler_D.get_scale()}]"
                     )
 
-                # todo: sample image
                 if discriminator.step % opt.sample_interval == 0:
                     with torch.no_grad():
                         copied_metadata = copy.deepcopy(metadata)
                         copied_metadata['h_stddev'] = copied_metadata['v_stddev'] = 0
                         copied_metadata['img_size'] = 128
+                    gen_args = {
+                        "img_size": copied_metadata["img_size"],
+                        "fov": copied_metadata["fov"],
+                        "ray_start": copied_metadata["ray_start"],
+                        "ray_end": copied_metadata["ray_end"],
+                        "num_steps": copied_metadata["num_steps"],
+                        "h_mean": copied_metadata["h_mean"],
+                        "v_mean": copied_metadata["v_mean"],
+                        "h_stddev": copied_metadata["h_stddev"],
+                        "v_stddev": copied_metadata["v_stddev"],
+                        "hierarchical_sample": copied_metadata["hierarchical_sample"],
+                        "psi": 1,
+                        "sample_dist": copied_metadata["sample_dist"],
+                    }
                     sampler(
                         z=fixed_zs,
                         generator=generator_ddp,
-                        metadata={
-                            "img_size": copied_metadata["img_size"],
-                            "fov": copied_metadata["fov"],
-                            "ray_start": copied_metadata["ray_start"],
-                            "ray_end": copied_metadata["ray_end"],
-                            "num_steps": copied_metadata["num_steps"],
-                            "h_stddev": copied_metadata["h_stddev"],
-                            "v_stddev": copied_metadata["v_stddev"],
-                            "hierarchical_sample": copied_metadata["hierarchical_sample"],
-                            "psi": 1,
-                            "sample_dist": copied_metadata["z_dist"],
-                        },
+                        metadata=gen_args,
                         output_dir=opt.output_dir,
-                        img_name=f"{discriminator.step}",
+                        img_name=f"{discriminator.step}_fixed",
                     )
+                    gen_args["h_mean"] += 0.5
+                    sampler(
+                        z=fixed_zs,
+                        generator=generator_ddp,
+                        metadata=gen_args,
+                        output_dir=opt.output_dir,
+                        img_name=f"{discriminator.step}_tilted",
+                    )
+                    ema.store(generator_ddp.parameters())
+                    ema.copy_to(generator_ddp.parameters())
+                    sampler(
+                        z=fixed_zs,
+                        generator=generator_ddp,
+                        metadata=gen_args,
+                        output_dir=opt.output_dir,
+                        img_name=f"{discriminator.step}_tilted_ema",
+                    )
+                    gen_args["h_mean"] = copied_metadata["h_mean"]
+                    sampler(
+                        z=fixed_zs,
+                        generator=generator_ddp,
+                        metadata=gen_args,
+                        output_dir=opt.output_dir,
+                        img_name=f"{discriminator.step}_fixed_ema",
+                    )
+                    ema.restore(generator_ddp.parameters())
 
                 if discriminator.step % opt.sample_interval == 0:
                     torch.save(
