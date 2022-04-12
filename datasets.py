@@ -1,6 +1,7 @@
 """Datasets"""
 
 import os
+from typing import List, Tuple
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -164,6 +165,72 @@ class LSUNCars(Dataset):
         X = self.transform(X)
 
         return X, 0
+
+
+class DatasetGANDataset(Dataset):
+    def __init__(self, dataset_path, img_size, **kwargs):
+        super().__init__()
+
+        self.dataset_path = dataset_path
+
+        self.samples = self.make_dataset(dataset_path)
+        if len(self.samples) == 0:
+            msg = "Found 0 files in subfolders of: {}\n".format(self.dataset_path)
+            raise RuntimeError(msg)
+
+        self.image_transform = transforms.Compose(
+            [
+                transforms.Resize(
+                    img_size,
+                    interpolation=transforms.InterpolationMode.BILINEAR,
+                ),
+                transforms.CenterCrop(img_size),
+                transforms.ToTensor(),
+                transforms.Normalize([0.5], [0.5]),
+            ]
+        )
+
+        self.map_transform = transforms.Compose(
+            [
+                transforms.Resize(
+                    img_size,
+                    interpolation=transforms.InterpolationMode.NEAREST
+                ),
+                transforms.CenterCrop(img_size)
+            ]
+        )
+
+        return
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        sample = self.samples[index]
+        X = PIL.Image.open(sample[0])
+        X = self.image_transform(X)
+
+        map = np.load(sample[1])
+        map = self.map_transform(torch.from_numpy(map))
+        map = map.unsqueeze(dim=0)
+
+        return torch.cat((X, map)), 0
+
+    @classmethod
+    def make_dataset(cls, directory: str) -> List[Tuple[str, str]]:
+        instances = []
+        root_dir = os.path.abspath(directory)
+        if not os.path.isdir(root_dir):
+            raise ValueError("Invalid input directory")
+        for root, _, fnames in sorted(os.walk(root_dir, followlinks=False)):
+            tmp = {}
+            for f in fnames:
+                if f.lower().endswith(('png', 'npy')) and (not 'latent' in f):
+                    pathname, extension = os.path.splitext(f)
+                    num = pathname.split('_')[-1]
+                    tmp[num] = tmp.get(num, []) + [os.path.join(root, f)]
+            instances += list(map(lambda x: sorted(x), filter(lambda x: len(x) == 2, tmp.values())))
+        return instances
 
 
 def get_dataset(name, subsample=None, batch_size=1, **kwargs):
