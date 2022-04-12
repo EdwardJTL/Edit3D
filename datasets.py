@@ -211,8 +211,8 @@ class DatasetGANDataset(Dataset):
         X = self.image_transform(X)
 
         map = np.load(sample[1])
-        map = self.map_transform(torch.from_numpy(map))
-        map = map.unsqueeze(dim=0)
+        map = torch.from_numpy(map).unsqueeze(dim=0)
+        map = self.map_transform(map)
 
         return torch.cat((X, map)), 0
 
