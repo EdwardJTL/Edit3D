@@ -17,12 +17,16 @@ def generate_image(generator, z, return_aux_img=True, **kwargs):
     with torch.no_grad():
         imgs = generator(z, forward_points=256**2, return_aux_img=return_aux_img, **kwargs)[0]
 
-        img = imgs[0:3, :, :, :]
-        aux_img = imgs[3:, :, :, :]
+        print(imgs.shape)
+        print(imgs.dtype)
+
+        img = imgs[0, :, :, :].unsqueeze(dim=0)
+        aux_img = imgs[1, :, :, :].unsqueeze(dim=0)
 
         img_min = img.min()
         img_max = img.max()
         img = (img - img_min) / (img_max - img_min) * 256
+        print(img.shape)
         img = img.permute(0, 2, 3, 1).squeeze().cpu().numpy()
     return img, aux_img
 
@@ -38,6 +42,25 @@ def make_curriculum(curriculum):
     curriculum["nerf_noise"] = 0
     curriculum = {key: value for key, value in curriculum.items() if type(key) is str}
     return curriculum
+
+
+def make_gen_args(curriculum):
+    gen_args = {
+        "img_size": curriculum["img_size"],
+        "fov": curriculum["fov"],
+        "ray_start": curriculum["ray_start"],
+        "ray_end": curriculum["ray_end"],
+        "num_steps": curriculum["num_steps"],
+        "h_mean": curriculum["h_mean"],
+        "v_mean": curriculum["v_mean"],
+        "h_stddev": 0,
+        "v_stddev": 0,
+        "hierarchical_sample": curriculum["hierarchical_sample"],
+        "psi": 0.7,
+        "sample_dist": curriculum["sample_dist"],
+        "nerf_noise": 0
+    }
+    return gen_args
 
 
 def load_generator(model_path):
@@ -73,7 +96,8 @@ def make_matrix(
         b=1,
         dist=curriculum['z_dist'],
     )
-    print("z {}".format(z.cpu()))
+    print("z nerf {}".format(z["z_nerf"].cpu()))
+    print("z inr {}".format(z["z_inr"].cpu()))
     canvas = Image.new(
         # channels
         "RGBA",
@@ -92,7 +116,8 @@ def make_matrix(
             print("Making Image yaw {} pitch {} at ({}, {})".format(y, p, iy, ip))
             curriculum["h_mean"] = y
             curriculum["v_mean"] = p
-            img, aux_img = generate_image(gen, z, **curriculum)
+            gen_args = make_gen_args(curriculum)
+            img, aux_img = generate_image(generator=gen, z=z, return_aux_img=True, **gen_args)
             PIL_image = Image.fromarray(np.uint8(img)).convert("RGB")
             # PIL_image.save("{}_{}.png".format(iy, ip))
             canvas.paste(
@@ -102,14 +127,21 @@ def make_matrix(
     return canvas
 
 def main():
-    model_path = "/h/edwardl/pigan/output/5320339/DELAYEDPURGE/"
+    model_path = "/checkpoint/edwardl/6774980/DELAYEDPURGE/"
     curriculum = "CelebA"
     yaw = np.linspace(math.pi * 0.5 - 0.3, math.pi * 0.5 + 0.3, 5, endpoint=False)
-    pitch = np.linspace(math.pi / 4 * 85 / 90 - 0.15, math.pi / 4 * 85 / 90 + 0.15, 5, endpoint=False)
+    pitch_offset = math.pi / 4
+    pitch_range = math.pi / 4
+    pitch = np.linspace(
+        math.pi / 4 * 85 / 90 - pitch_range, 
+        math.pi / 4 * 85 / 90 + pitch_range, 
+        5, 
+        endpoint=False)
+    pitch += pitch_offset
     img_size = 64
     text_height = 20
     left_margin = 50
-    seed = 0
+    seed = 23
     print("Starting Generation")
     image = make_matrix(
         load_generator(model_path),
