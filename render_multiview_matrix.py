@@ -146,11 +146,15 @@ def make_matrices(
     return canvas, canvas_aux
 
 def main():
-    model_path = "/checkpoint/edwardl/6774980/DELAYEDPURGE/"
-    curriculum = "CelebA"
-    yaw = np.linspace(math.pi * 0.5 - 0.3, math.pi * 0.5 + 0.3, 5, endpoint=False)
+    # model_path = "/checkpoint/edwardl/6774980/DELAYEDPURGE/"
+    # curriculum = "CelebA"
+    model_path = "/h/edwardl/scratch/edit3d/output/6754083/DELAYEDPURGE/"
+    curriculum = "LSUN"
+    # yaw = np.linspace(math.pi * 0.5 - 0.3, math.pi * 0.5 + 0.3, 5, endpoint=False)
+    yaw = np.linspace(math.pi * 0.5 - 1, math.pi * 0.5 + 1, 5, endpoint=False)
     pitch_offset = math.pi / 4
-    pitch_range = math.pi / 4
+    # pitch_range = math.pi / 4
+    pitch_range = math.pi / 4 * (1.2)
     pitch = np.linspace(
         math.pi / 4 * 85 / 90 - pitch_range, 
         math.pi / 4 * 85 / 90 + pitch_range, 
@@ -160,8 +164,9 @@ def main():
     img_size = 64
     text_height = 20
     left_margin = 50
-    # seed = 23
-    for seed in [0, 30, 37, 44, 58]:
+    # seed = 51, 68, 285, 4363, 1996?, 314233?, 314418, 314344, 314381
+    # for seed in [0, 30, 37, 44, 58]:
+    for seed in [51, 68, 285, 4363, 1996, 314233, 314418, 314344, 314381]:
         print("Starting Generation {}".format(seed))
         image, aux_image = make_matrices(
             load_generator(model_path),
