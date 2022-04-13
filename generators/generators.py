@@ -2566,3 +2566,18 @@ class CIPSGeneratorNerfINR(nn.Module):
                 up_vector=up_vector,
             )
             return imgs, pitch_yaw
+
+
+    def get_truncated_freq_phase(self,
+                                 raw_style_dict,
+                                 avg_style_dict,
+                                 raw_lambda):
+        # truncated_frequencies = self.avg_frequencies + psi * (raw_frequencies - self.avg_frequencies)
+        # truncated_phase_shifts = self.avg_phase_shifts + psi * (raw_phase_shifts - self.avg_phase_shifts)
+
+        truncated_style_dict = {}
+        for name, avg_style in avg_style_dict.items():
+            raw_style = raw_style_dict[name]
+            truncated_style = avg_style + raw_lambda * (raw_style - avg_style)
+            truncated_style_dict[name] = truncated_style
+        return truncated_style_dict
