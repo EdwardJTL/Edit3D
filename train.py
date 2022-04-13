@@ -443,7 +443,9 @@ def train(rank, world_size, opt):
             optimizer_D.zero_grad()
             scaler_D.scale(d_loss).backward()
             scaler_D.unscale_(optimizer_D)
-
+            torch.nn.utils.clip_grad_norm_(
+                discriminator_ddp.parameters(), metadata["grad_clip"]
+            )
             scaler_D.step(optimizer_D)
             scaler_D.update()
 
@@ -491,6 +493,9 @@ def train(rank, world_size, opt):
                 scaler_G.scale(g_loss).backward()
             # end accumulate gradients
             scaler_G.unscale_(optimizer_G)
+            torch.nn.utils.clip_grad_norm_(
+                generator_ddp.parameters(), metadata["grad_clip"]
+            )
             scaler_G.step(optimizer_G)
             scaler_G.update()
             optimizer_G.zero_grad()
