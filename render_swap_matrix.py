@@ -38,7 +38,7 @@ def make_curriculum(curriculum):
     if curriculum is None:
         raise ValueError(f"{curriculum} is not a valid curriculum")
     curriculum["num_steps"] = curriculum[0]["num_steps"]
-    curriculum["psi"] = 0.7
+    curriculum["psi"] = 1
     curriculum["v_stddev"] = 0
     curriculum["h_stddev"] = 0
     curriculum["nerf_noise"] = 0
@@ -58,9 +58,9 @@ def make_gen_args(curriculum):
         "h_stddev": 0,
         "v_stddev": 0,
         "hierarchical_sample": curriculum["hierarchical_sample"],
-        "psi": 0.7,
+        "psi": curriculum["psi"],
         "sample_dist": curriculum["sample_dist"],
-        "nerf_noise": 0
+        "nerf_noise": curriculum["nerf_noise"]
     }
     return gen_args
 
@@ -81,37 +81,70 @@ def load_generator(model_path):
 
 
 def main():
-    img_size = 64
-    model_path = "/checkpoint/edwardl/6774980/DELAYEDPURGE/"
-    curriculum = "CelebA"
+    img_size = 128
+    # model_path = "/checkpoint/edwardl/6774980/DELAYEDPURGE/"
+    # curriculum = "CelebA"
+    model_path = "/h/edwardl/scratch/edit3d/output/6754083/DELAYEDPURGE/"
+    curriculum = "LSUN"
     curriculum = make_curriculum(curriculum)
     curriculum["img_size"] = img_size
-    yaw = curriculum["h_mean"]
-    pitch = curriculum["v_mean"]
+    curriculum["h_mean"] = math.pi * 0.5 + 0.7
+    curriculum["v_mean"] = math.pi / 2 - 0.5
     gen_args = make_gen_args(curriculum)
     # make z's
     generator = load_generator(model_path)
-    seeds = [0, 30, 37, 44, 58]
+    # seeds = [0, 30, 37, 44, 58]
+    seeds = [51, 68, 285, 4363, 1996, 314233, 314418, 314344, 314381]
     z_s = []
     for seed in seeds:
         torch.manual_seed(seed)
         z_s.append(generator.get_zs(b=1, dist=curriculum['z_dist']))
 
-    imgs = []
-    aux_imgs = []
+    canvas = Image.new(
+        # channels
+        "RGBA",
+        (
+            # width
+            img_size * len(seeds),
+            # height
+            img_size * len(seeds)
+        ),
+        # fill color
+        (255, 255, 255, 255),
+    )
+    canvas_aux = Image.new(
+        # channels
+        "RGBA",
+        (
+            # width
+            img_size * len(seeds),
+            # height
+            img_size * len(seeds)
+        ),
+        # fill color
+        (255, 255, 255, 255),
+    )
 
     for i, z_a in enumerate(z_s):
         for j, z_b in enumerate(z_s):
-            print("{} {}".format(i, j))
+            print("i {} {}; j {} {}".format(i, np.linalg.norm(z_a["z_nerf"].cpu()), j, np.linalg.norm(z_b["z_inr"].cpu())))
             z = {
                 "z_nerf": z_a["z_nerf"],
-                "z_inr": z_b["z_inr"],
+                # "z_inr": torch.zeros(z_b["z_inr"].shape, device=device),
+                "z_inr": z_b["z_inr"]
             }
             img, aux_img = generate_image(generator, z, **gen_args)
-            imgs.append(img)
-            aux_imgs.append(aux_img)
-    save_image(torch.cat(imgs, dim=0), "imgs.png", nrows=len(seeds))
-    save_image(torch.cat(aux_imgs, dim=0), "aux_imgs.png", nrows=len(seeds))
+
+            PIL_image = Image.fromarray(np.uint8(img)).convert("RGB")
+            canvas.paste(
+                PIL_image, (img_size * i, img_size * j)
+            )
+            PIL_image_aux = Image.fromarray(np.uint8(aux_img)).convert("RGB")
+            canvas_aux.paste(
+                PIL_image_aux, (img_size * i, img_size * j)
+            )
+    canvas.save("./test.png")
+    canvas_aux.save("./test_aux.png")
     return
 
 
