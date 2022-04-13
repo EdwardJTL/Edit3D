@@ -14,20 +14,21 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def generate_image(generator, z, return_aux_img=True, **kwargs):
+    def transform(img):
+        img_min = img.min()
+        img_max = img.max()
+        img = (img - img_min) / (img_max - img_min) * 256
+        img = img.permute(0, 2, 3, 1).squeeze().cpu().numpy()
+        return img
+
     with torch.no_grad():
         imgs = generator(z, forward_points=256**2, return_aux_img=return_aux_img, **kwargs)[0]
-
-        print(imgs.shape)
-        print(imgs.dtype)
 
         img = imgs[0, :, :, :].unsqueeze(dim=0)
         aux_img = imgs[1, :, :, :].unsqueeze(dim=0)
 
-        img_min = img.min()
-        img_max = img.max()
-        img = (img - img_min) / (img_max - img_min) * 256
-        print(img.shape)
-        img = img.permute(0, 2, 3, 1).squeeze().cpu().numpy()
+        img = transform(img)
+        aux_img = transform(aux_img)
     return img, aux_img
 
 
@@ -86,7 +87,7 @@ def write_labels(canvas, yaw, pitch, img_size, text_height=20, left_margin=0):
         draw.text((0, img_size * ip + text_height), f"{p:.3f}", fill=(0, 0, 0))
     return canvas
 
-def make_matrix(
+def make_matrices(
     gen, curriculum, seed, yaw, pitch, img_size, text_height=20, left_margin=0
 ):
     curriculum = make_curriculum(curriculum)
@@ -110,6 +111,18 @@ def make_matrix(
         # fill color
         (255, 255, 255, 255),
     )
+    canvas_aux = Image.new(
+        # channels
+        "RGBA",
+        (
+            # width
+            img_size * len(yaw) + left_margin,
+            # height
+            img_size * len(pitch) + text_height,
+        ),
+        # fill color
+        (255, 255, 255, 255),
+    )
     canvas_w, canvas_h = canvas.size
     for iy, y in enumerate(yaw):
         for ip, p in enumerate(pitch):
@@ -117,14 +130,20 @@ def make_matrix(
             curriculum["h_mean"] = y
             curriculum["v_mean"] = p
             gen_args = make_gen_args(curriculum)
+
             img, aux_img = generate_image(generator=gen, z=z, return_aux_img=True, **gen_args)
+            
             PIL_image = Image.fromarray(np.uint8(img)).convert("RGB")
-            # PIL_image.save("{}_{}.png".format(iy, ip))
             canvas.paste(
                 PIL_image, (img_size * iy + left_margin, img_size * ip + text_height)
             )
+            PIL_image_aux = Image.fromarray(np.uint8(aux_img)).convert("RGB")
+            canvas_aux.paste(
+                PIL_image_aux, (img_size * iy + left_margin, img_size * ip + text_height)
+            )
     canvas = write_labels(canvas, yaw, pitch, img_size, text_height, left_margin)
-    return canvas
+    canvas_aux = write_labels(canvas_aux, yaw, pitch, img_size, text_height, left_margin)
+    return canvas, canvas_aux
 
 def main():
     model_path = "/checkpoint/edwardl/6774980/DELAYEDPURGE/"
@@ -141,20 +160,22 @@ def main():
     img_size = 64
     text_height = 20
     left_margin = 50
-    seed = 23
-    print("Starting Generation")
-    image = make_matrix(
-        load_generator(model_path),
-        curriculum,
-        seed,
-        yaw,
-        pitch,
-        img_size,
-        text_height,
-        left_margin,
-    )
-    print("Saving Image")
-    image.save("./test.png")
+    # seed = 23
+    for seed in [0, 30, 37, 44, 58]:
+        print("Starting Generation {}".format(seed))
+        image, aux_image = make_matrices(
+            load_generator(model_path),
+            curriculum,
+            seed,
+            yaw,
+            pitch,
+            img_size,
+            text_height,
+            left_margin,
+        )
+        print("Saving Image")
+        image.save("./test{}.png".format(seed))
+        aux_image.save("./test_aux{}.png".format(seed))
     return
 
 
