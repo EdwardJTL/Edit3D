@@ -66,11 +66,14 @@ def write_labels(canvas, yaw, pitch, img_size, text_height=20, left_margin=0):
 def make_matrix(
     gen, curriculum, seed, yaw, pitch, img_size, text_height=20, left_margin=0
 ):
-    torch.manual_seed(seed)
-    z = torch.randn((1, 256), device=device)
-    print("seed {}".format(z.cpu()))
     curriculum = make_curriculum(curriculum)
     curriculum["img_size"] = img_size
+    torch.manual_seed(seed)
+    z = gen.get_zs(
+        b=1,
+        dist=curriculum['z_dist'],
+    )
+    print("z {}".format(z.cpu()))
     canvas = Image.new(
         # channels
         "RGBA",
